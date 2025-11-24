@@ -101,11 +101,10 @@ class CymaticsVisualizer {
     }
     
     async start() {
-        // Stop everything first to ensure clean state
+        // Stop everything first - Safari needs clean state
         if (this.isRunning) {
             this.stop();
-            // Wait a moment for cleanup
-            await new Promise(resolve => setTimeout(resolve, 100));
+            await new Promise(resolve => setTimeout(resolve, 200));
         }
         
         try {
@@ -114,7 +113,7 @@ class CymaticsVisualizer {
                 throw new Error('getUserMedia not supported');
             }
             
-            // Request microphone - simplified constraints
+            // Request microphone
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             
             if (!stream?.getAudioTracks()?.length) {
@@ -124,32 +123,51 @@ class CymaticsVisualizer {
             // Store stream
             this.stream = stream;
             
-            // Create new AudioContext if needed
-            if (!this.audioContext || this.audioContext.state === 'closed') {
-                const AC = window.AudioContext || window.webkitAudioContext;
-                this.audioContext = new AC();
+            // Safari workaround: Close old context completely if it exists
+            if (this.audioContext) {
+                try {
+                    if (this.audioContext.state !== 'closed') {
+                        await this.audioContext.close();
+                    }
+                } catch (e) {
+                    console.warn('Error closing old context:', e);
+                }
+                this.audioContext = null;
             }
             
-            // Resume if suspended
+            // Create BRAND NEW AudioContext every time (Safari requirement)
+            const AC = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AC();
+            
+            // Resume if suspended (always needed in Safari)
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
             
-            // Create fresh analyser node
+            // Wait a tiny bit for Safari to initialize
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Safari fix: Create analyser and set properties BEFORE creating source
             this.analyser = this.audioContext.createAnalyser();
+            
+            // Set properties immediately after creation, before any connections
+            // Safari makes these readonly after connection
             this.analyser.fftSize = 2048;
             this.analyser.smoothingTimeConstant = 0.6;
             
-            // Create source node
-            this.microphone = this.audioContext.createMediaStreamSource(stream);
-            
-            // Connect source to analyser
-            this.microphone.connect(this.analyser);
-            
-            // Setup data array
+            // Create data array BEFORE connection (Safari quirk)
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // Start
+            // NOW create the source node
+            this.microphone = this.audioContext.createMediaStreamSource(stream);
+            
+            // Connect AFTER all properties are set
+            this.microphone.connect(this.analyser);
+            
+            // Wait a moment for connection to establish (Safari needs this)
+            await new Promise(resolve => setTimeout(resolve, 50));
+            
+            // Start visualization
             this.isRunning = true;
             this.isStarted = true;
             this.toggleBtn.style.opacity = '0.5';
@@ -158,10 +176,14 @@ class CymaticsVisualizer {
             
         } catch (error) {
             console.error('Start error:', error);
+            console.error('Error stack:', error.stack);
             
             // Cleanup on error
             if (this.stream) {
-                this.stream.getTracks().forEach(t => t.stop());
+                this.stream.getTracks().forEach(t => {
+                    t.stop();
+                    t.enabled = false;
+                });
                 this.stream = null;
             }
             
