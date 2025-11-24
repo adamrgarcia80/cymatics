@@ -195,18 +195,36 @@ class CymaticsVisualizer {
             this.playPauseBtn.style.display = 'none';
         }
         
-        // Load YouTube audio - will use screen capture as it's the only browser-compatible way
+        // IMPORTANT: Request screen capture IMMEDIATELY while user gesture is still active
+        // Safari requires getDisplayMedia to be called directly from user gesture handler
+        // After this, load YouTube video - the screen capture will pick up its audio
         try {
+            // Request screen capture first (while gesture context is active)
+            await this.start();
+            
+            // Then load YouTube video - audio will be captured from it
             await this.loadYouTubeAudio(videoId);
         } catch (error) {
             console.error('Error loading audio:', error);
+            
+            // Clean up on error
+            this.stop();
             
             if (this.visualizeBtn) {
                 this.visualizeBtn.textContent = 'VISUALIZE';
                 this.visualizeBtn.disabled = false;
             }
             
-            alert('Unable to load audio. Please make sure to select "Share audio" when prompted.');
+            let message = 'Unable to capture audio. ';
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                message += 'Please allow screen/audio sharing. When prompted, select the browser window/tab and make sure "Share audio" is checked.';
+            } else if (error.name === 'NotFoundError') {
+                message += 'No audio source found.';
+            } else {
+                message += error.message || 'Unknown error occurred.';
+            }
+            
+            alert(message);
         }
     }
     
@@ -229,11 +247,43 @@ class CymaticsVisualizer {
         `;
         document.body.appendChild(this.youtubeIframe);
         
-        // Wait for video to start playing, then capture system audio
+        // Wait a moment for video to start playing
+        // The screen capture is already active, so it will pick up the audio
         await new Promise(resolve => setTimeout(resolve, 2000));
         
-        // Capture system audio - browser will prompt once
-        await this.start();
+        // Make sure screen capture is active
+        if (!this.mediaStream || !this.analyser) {
+            throw new Error('Screen capture was not started successfully');
+        }
+        
+        // Now start the visualization
+        this.isRunning = true;
+        this.isStarted = true;
+        this.isPaused = false;
+        
+        // Update button text
+        if (this.visualizeBtn) {
+            this.visualizeBtn.textContent = 'STOP';
+            this.visualizeBtn.disabled = false;
+        }
+        
+        // Show play/pause button next to visualize button
+        if (this.playPauseBtn) {
+            this.playPauseBtn.style.display = 'flex';
+            if (this.pauseIcon) {
+                this.pauseIcon.style.display = 'block';
+            }
+            if (this.playIcon) {
+                this.playIcon.style.display = 'none';
+            }
+        }
+        
+        console.log('Visualization started - play/pause button should be visible');
+        
+        // Start animation if not already running
+        if (!this.animationId) {
+            this.animate();
+        }
     }
     
     async start() {
@@ -321,30 +371,11 @@ class CymaticsVisualizer {
                 this.stop();
             };
             
-            // Start visualization
-            this.isRunning = true;
-            this.isStarted = true;
-            this.isPaused = false;
+            // Don't start visualization yet - wait for YouTube video to load
+            // isRunning will be set after YouTube video is loaded
+            console.log('Screen capture started - waiting for YouTube video to load');
             
-            // Update button text
-            if (this.visualizeBtn) {
-                this.visualizeBtn.textContent = 'STOP';
-                this.visualizeBtn.disabled = false;
-            }
-            
-            // Show play/pause button next to visualize button
-            if (this.playPauseBtn) {
-                this.playPauseBtn.style.display = 'flex';
-                if (this.pauseIcon) {
-                    this.pauseIcon.style.display = 'block';
-                }
-                if (this.playIcon) {
-                    this.playIcon.style.display = 'none';
-                }
-            }
-            
-            console.log('Visualization started - play/pause button should be visible');
-            this.animate();
+            // Return success - visualization will start after YouTube loads
             
         } catch (error) {
             console.error('Audio capture error:', error);
