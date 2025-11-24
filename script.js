@@ -6,8 +6,6 @@ class CymaticsVisualizer {
         this.ctx = this.canvas.getContext('2d');
         this.audioContext = null;
         this.analyser = null;
-        this.microphone = null;
-        this.stream = null; // Store stream reference separately
         this.dataArray = null;
         this.isRunning = false;
         this.animationId = null;
@@ -25,8 +23,13 @@ class CymaticsVisualizer {
         this.lastAmplitude = 0; // Track amplitude for dissolve effect
         this.dissolveAlpha = 0; // Current dissolve state
         
+        // Audio source
+        this.audioElement = null;
+        this.audioSource = null;
+        
         // DOM elements
         this.toggleBtn = document.getElementById('toggleBtn');
+        this.fileInput = document.getElementById('audioFileInput');
         this.frequencyDisplay = document.getElementById('frequency');
         this.amplitudeDisplay = document.getElementById('amplitude');
         
@@ -82,9 +85,11 @@ class CymaticsVisualizer {
     }
     
     setupEventListeners() {
+        // Button toggles file picker or stops playback
         this.toggleBtn.addEventListener('click', () => {
             if (!this.isStarted) {
-                this.start();
+                // Open file picker
+                this.fileInput.click();
             } else {
                 this.stop();
             }
@@ -93,117 +98,103 @@ class CymaticsVisualizer {
         this.toggleBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
             if (!this.isStarted) {
-                this.start();
+                this.fileInput.click();
             } else {
                 this.stop();
             }
         });
+        
+        // Handle file selection
+        this.fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.startWithFile(file);
+            }
+        });
     }
     
-    async start() {
+    async startWithFile(file) {
         try {
-            console.log('Starting microphone access...');
-            
-            // Stop any existing stream first
+            // Stop any existing playback
             if (this.isRunning) {
                 this.stop();
             }
             
-            // Clean up old analyser and microphone completely
-            if (this.microphone) {
+            // Clean up old audio nodes
+            if (this.audioSource) {
                 try {
-                    this.microphone.disconnect();
+                    this.audioSource.disconnect();
                 } catch (e) {}
-                this.microphone = null;
+                this.audioSource = null;
+            }
+            if (this.audioElement) {
+                this.audioElement.pause();
+                this.audioElement = null;
             }
             this.analyser = null;
             this.dataArray = null;
             
-            console.log('Requesting microphone...');
-            // Get microphone stream
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            this.stream = stream;
-            console.log('Microphone stream obtained');
-            
-            // Close old context if it exists (Safari needs fresh context)
-            if (this.audioContext && this.audioContext.state !== 'closed') {
-                try {
-                    await this.audioContext.close();
-                } catch (e) {}
+            // Create or get audio context
+            if (!this.audioContext || this.audioContext.state === 'closed') {
+                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                this.audioContext = new AudioContextClass();
             }
-            
-            console.log('Creating AudioContext...');
-            // Create brand new audio context every time (Safari requirement)
-            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-            this.audioContext = new AudioContextClass();
-            console.log('AudioContext created, state:', this.audioContext.state);
             
             // Resume if suspended
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
-                console.log('AudioContext resumed');
             }
             
-            console.log('Creating analyser...');
-            // Create analyser in local variable first (Safari workaround)
+            // Create HTML5 audio element
+            const audio = new Audio();
+            const objectUrl = URL.createObjectURL(file);
+            audio.src = objectUrl;
+            audio.crossOrigin = 'anonymous';
+            
+            // Wait for audio to be ready
+            await new Promise((resolve, reject) => {
+                audio.oncanplay = resolve;
+                audio.onerror = reject;
+                audio.load();
+            });
+            
+            // Create analyser
             const analyser = this.audioContext.createAnalyser();
-            console.log('Analyser created');
+            analyser.fftSize = 2048;
+            analyser.smoothingTimeConstant = 0.6;
             
-            // Use fixed buffer size (1024 for default fftSize 2048)
-            const bufferLength = 1024;
-            console.log('Creating data array...');
+            // Create audio source from HTML5 audio element
+            const source = this.audioContext.createMediaElementSource(audio);
+            
+            // Connect source to analyser to destination
+            source.connect(analyser);
+            analyser.connect(this.audioContext.destination);
+            
+            // Create data array
+            const bufferLength = analyser.frequencyBinCount;
             const dataArray = new Uint8Array(bufferLength);
-            console.log('Data array created');
             
-            console.log('Creating microphone source...');
-            // Create microphone source in local variable first
-            const microphone = this.audioContext.createMediaStreamSource(stream);
-            console.log('Microphone source created');
-            
-            console.log('Connecting...');
-            // Connect
-            microphone.connect(analyser);
-            console.log('Connected');
-            
-            // ONLY NOW assign to instance properties after everything works
+            // Store references
+            this.audioElement = audio;
+            this.audioSource = source;
             this.analyser = analyser;
-            this.microphone = microphone;
             this.dataArray = dataArray;
-            console.log('All assigned to instance');
+            
+            // Start playback
+            await audio.play();
             
             // Start visualization
             this.isRunning = true;
             this.isStarted = true;
             this.toggleBtn.style.opacity = '0.5';
-            console.log('Starting animation...');
             
             this.animate();
             
         } catch (error) {
-            console.error('Microphone error:', error);
-            console.error('Error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                line: error.line,
-                column: error.column
-            });
+            console.error('Audio file error:', error);
             
-            // Cleanup on error
-            if (this.stream) {
-                this.stream.getTracks().forEach(track => track.stop());
-                this.stream = null;
-            }
-            
-            // Show error
-            let message = 'Unable to access microphone. ';
-            if (error.name === 'NotAllowedError') {
-                message += 'Please allow microphone permissions.';
-            } else if (error.name === 'NotFoundError') {
-                message += 'No microphone found.';
-            } else {
-                message += error.message || 'Unknown error.';
-            }
+            let message = 'Unable to play audio file. ';
+            message += error.message || 'Unknown error.';
             
             alert(message);
             
@@ -214,16 +205,22 @@ class CymaticsVisualizer {
     }
     
     stop() {
-        // Stop stream tracks
-        if (this.stream) {
-            this.stream.getTracks().forEach(track => track.stop());
-            this.stream = null;
+        // Stop audio playback
+        if (this.audioElement) {
+            this.audioElement.pause();
+            this.audioElement.currentTime = 0;
+            if (this.audioElement.src.startsWith('blob:')) {
+                URL.revokeObjectURL(this.audioElement.src);
+            }
+            this.audioElement = null;
         }
         
-        // Disconnect microphone
-        if (this.microphone) {
-            this.microphone.disconnect();
-            this.microphone = null;
+        // Disconnect audio source
+        if (this.audioSource) {
+            try {
+                this.audioSource.disconnect();
+            } catch (e) {}
+            this.audioSource = null;
         }
         
         // Stop animation
@@ -237,6 +234,11 @@ class CymaticsVisualizer {
         this.toggleBtn.style.opacity = '1';
         this.frequencyDisplay.textContent = '--';
         this.amplitudeDisplay.textContent = '--';
+        
+        // Reset file input
+        if (this.fileInput) {
+            this.fileInput.value = '';
+        }
         
         this.drawInitialPattern();
     }
