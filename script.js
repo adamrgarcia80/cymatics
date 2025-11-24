@@ -145,28 +145,31 @@ class CymaticsVisualizer {
             }
             
             console.log('Creating analyser...');
-            // Create analyser - don't set any properties
-            this.analyser = this.audioContext.createAnalyser();
+            // Create analyser in local variable first (Safari workaround)
+            const analyser = this.audioContext.createAnalyser();
             console.log('Analyser created');
             
-            // Use fixed buffer size to avoid accessing frequencyBinCount (Safari issue)
-            // Default analyser fftSize is 2048, so frequencyBinCount = 1024
+            // Use fixed buffer size (1024 for default fftSize 2048)
             const bufferLength = 1024;
-            console.log('Using fixed buffer length:', bufferLength);
-            
             console.log('Creating data array...');
-            this.dataArray = new Uint8Array(bufferLength);
+            const dataArray = new Uint8Array(bufferLength);
             console.log('Data array created');
             
             console.log('Creating microphone source...');
-            // Create microphone source
-            this.microphone = this.audioContext.createMediaStreamSource(stream);
+            // Create microphone source in local variable first
+            const microphone = this.audioContext.createMediaStreamSource(stream);
             console.log('Microphone source created');
             
             console.log('Connecting...');
-            // Connect immediately
-            this.microphone.connect(this.analyser);
+            // Connect
+            microphone.connect(analyser);
             console.log('Connected');
+            
+            // ONLY NOW assign to instance properties after everything works
+            this.analyser = analyser;
+            this.microphone = microphone;
+            this.dataArray = dataArray;
+            console.log('All assigned to instance');
             
             // Start visualization
             this.isRunning = true;
