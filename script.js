@@ -136,8 +136,13 @@ class CymaticsVisualizer {
             }
             
             // Create BRAND NEW AudioContext every time (Safari requirement)
-            const AC = window.AudioContext || window.webkitAudioContext;
-            this.audioContext = new AC();
+            if (window.AudioContext) {
+                this.audioContext = new AudioContext();
+            } else if (window.webkitAudioContext) {
+                this.audioContext = new webkitAudioContext();
+            } else {
+                throw new Error('AudioContext not supported');
+            }
             
             // Resume if suspended (always needed in Safari)
             if (this.audioContext.state === 'suspended') {
@@ -147,48 +152,21 @@ class CymaticsVisualizer {
             // Wait a tiny bit for Safari to initialize
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            // Safari fix: Create analyser with all properties in one atomic operation
-            // Create analyser
+            // Create analyser node
             this.analyser = this.audioContext.createAnalyser();
             
-            // Set properties IMMEDIATELY - Safari locks these if we delay
-            // Must be done before creating ANY source nodes or connections
-            try {
-                Object.defineProperty(this.analyser, 'fftSize', {
-                    value: 2048,
-                    writable: true,
-                    enumerable: true,
-                    configurable: true
-                });
-            } catch (e1) {
-                // Fallback to direct assignment
-                this.analyser.fftSize = 2048;
-            }
-            
-            try {
-                Object.defineProperty(this.analyser, 'smoothingTimeConstant', {
-                    value: 0.6,
-                    writable: true,
-                    enumerable: true,
-                    configurable: true
-                });
-            } catch (e2) {
-                // Fallback to direct assignment
-                this.analyser.smoothingTimeConstant = 0.6;
-            }
-            
-            // Verify properties were set
-            if (this.analyser.fftSize !== 2048) {
-                throw new Error('Could not set analyser fftSize (Safari readonly issue)');
-            }
+            // Set properties BEFORE creating source or connecting anything
+            // This is critical - once connected, Safari makes properties readonly
+            this.analyser.fftSize = 2048;
+            this.analyser.smoothingTimeConstant = 0.6;
             
             // Create data array
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // NOW create source node (after analyser is fully configured)
+            // Create source node AFTER analyser is configured
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Connect after everything is set
+            // Connect source to analyser
             this.microphone.connect(this.analyser);
             
             // Start visualization
