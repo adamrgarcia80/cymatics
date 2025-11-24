@@ -26,9 +26,7 @@ class CymaticsVisualizer {
         
         // Audio source
         this.audioSource = null;
-        this.mediaStream = null;
-        this.youtubePlayer = null;
-        this.youtubeIframe = null;
+        this.audioElement = null;
         
         // DOM elements
         this.urlInputContainer = document.getElementById('urlInputContainer');
@@ -125,65 +123,43 @@ class CymaticsVisualizer {
     }
     
     togglePlayPause() {
-        if (!this.isStarted) return;
+        if (!this.isStarted || !this.audioElement) return;
         
-        this.isPaused = !this.isPaused;
-        
-        // Update icon
-        if (this.playIcon && this.pauseIcon) {
-            if (this.isPaused) {
-                this.playIcon.style.display = 'block';
-                this.pauseIcon.style.display = 'none';
-            } else {
-                this.playIcon.style.display = 'none';
-                this.pauseIcon.style.display = 'block';
-            }
+        if (this.isPaused) {
+            // Resume playback
+            this.audioElement.play();
+            this.isPaused = false;
+            if (this.playIcon) this.playIcon.style.display = 'none';
+            if (this.pauseIcon) this.pauseIcon.style.display = 'block';
+        } else {
+            // Pause playback
+            this.audioElement.pause();
+            this.isPaused = true;
+            if (this.playIcon) this.playIcon.style.display = 'block';
+            if (this.pauseIcon) this.pauseIcon.style.display = 'none';
         }
         
-        // Pause/resume YouTube video
-        if (this.youtubeIframe && this.youtubeIframe.contentWindow) {
-            try {
-                if (this.isPaused) {
-                    this.youtubeIframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
-                } else {
-                    this.youtubeIframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
-                }
-            } catch (e) {
-                console.warn('Could not control YouTube player:', e);
-            }
+        // Resume audio context if suspended
+        if (this.audioContext && this.audioContext.state === 'suspended') {
+            this.audioContext.resume();
         }
-    }
-    
-    extractVideoId(url) {
-        // Extract YouTube video ID from various URL formats
-        const patterns = [
-            /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
-            /youtube\.com\/watch\?.*v=([^&\n?#]+)/
-        ];
-        
-        for (const pattern of patterns) {
-            const match = url.match(pattern);
-            if (match && match[1]) {
-                return match[1];
-            }
-        }
-        return null;
     }
     
     async loadAndVisualize() {
         const url = this.youtubeUrlInput.value.trim();
         if (!url) {
-            alert('Please enter a YouTube URL');
+            alert('Please enter an audio URL (MP3, WAV, OGG, M4A, etc.)');
             return;
         }
         
-        const videoId = this.extractVideoId(url);
-        if (!videoId) {
-            alert('Invalid YouTube URL. Please paste a valid YouTube link.');
+        // Validate URL
+        try {
+            new URL(url);
+        } catch (e) {
+            alert('Please enter a valid URL');
             return;
         }
         
-        // Keep URL input visible, just show loading state
         // Update button text
         if (this.visualizeBtn) {
             this.visualizeBtn.textContent = 'LOADING...';
@@ -195,15 +171,8 @@ class CymaticsVisualizer {
             this.playPauseBtn.style.display = 'none';
         }
         
-        // IMPORTANT: Request screen capture IMMEDIATELY while user gesture is still active
-        // Safari requires getDisplayMedia to be called directly from user gesture handler
-        // After this, load YouTube video - the screen capture will pick up its audio
         try {
-            // Request screen capture first (while gesture context is active)
-            await this.start();
-            
-            // Then load YouTube video - audio will be captured from it
-            await this.loadYouTubeAudio(videoId);
+            await this.loadAudioFromUrl(url);
         } catch (error) {
             console.error('Error loading audio:', error);
             
@@ -215,51 +184,107 @@ class CymaticsVisualizer {
                 this.visualizeBtn.disabled = false;
             }
             
-            let message = 'Unable to capture audio. ';
-            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                message += 'Please allow screen/audio sharing. When prompted, select the browser window/tab and make sure "Share audio" is checked.';
-            } else if (error.name === 'NotFoundError') {
-                message += 'No audio source found.';
-            } else {
-                message += error.message || 'Unknown error occurred.';
-            }
-            
-            alert(message);
+            alert(`Unable to load audio: ${error.message || 'Please check the URL and try again'}`);
         }
     }
     
-    async loadYouTubeAudio(videoId) {
-        // Embed YouTube video (hidden) - it will play audio
-        if (this.youtubeIframe) {
-            this.youtubeIframe.remove();
+    async loadAudioFromUrl(url) {
+        // Clean up any existing audio
+        this.stop();
+        
+        // Create HTML5 Audio element
+        this.audioElement = new Audio();
+        this.audioElement.crossOrigin = 'anonymous'; // Required for CORS
+        this.audioElement.preload = 'auto';
+        
+        // Set up error handling
+        this.audioElement.onerror = (e) => {
+            throw new Error('Failed to load audio. Make sure the URL is accessible and the file format is supported (MP3, WAV, OGG, M4A).');
+        };
+        
+        // Set source and load
+        this.audioElement.src = url;
+        
+        // Wait for audio to be ready
+        await new Promise((resolve, reject) => {
+            this.audioElement.oncanplaythrough = () => {
+                resolve();
+            };
+            
+            this.audioElement.onerror = () => {
+                reject(new Error('Audio file could not be loaded. Check the URL and CORS settings.'));
+            };
+            
+            // Try to load
+            this.audioElement.load();
+        });
+        
+        // Create or get audio context
+        if (!this.audioContext || this.audioContext.state === 'closed') {
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AudioContextClass();
         }
         
-        this.youtubeIframe = document.createElement('iframe');
-        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&mute=0&origin=${window.location.origin}`;
-        this.youtubeIframe.allow = 'autoplay; encrypted-media';
-        this.youtubeIframe.style.cssText = `
-            position: fixed;
-            top: -9999px;
-            width: 1px;
-            height: 1px;
-            opacity: 0;
-            pointer-events: none;
-        `;
-        document.body.appendChild(this.youtubeIframe);
-        
-        // Wait a moment for video to start playing
-        // The screen capture is already active, so it will pick up the audio
-        await new Promise(resolve => setTimeout(resolve, 2000));
-        
-        // Make sure screen capture is active
-        if (!this.mediaStream || !this.analyser) {
-            throw new Error('Screen capture was not started successfully');
+        // Resume if suspended (required for autoplay policies)
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
         }
         
-        // Now start the visualization
+        // Connect audio element to Web Audio API
+        this.audioSource = this.audioContext.createMediaElementSource(this.audioElement);
+        
+        // Create analyser
+        this.analyser = this.audioContext.createAnalyser();
+        this.analyser.fftSize = 2048;
+        this.analyser.smoothingTimeConstant = 0.3;
+        
+        // Create gain node for amplification
+        const gainNode = this.audioContext.createGain();
+        gainNode.gain.value = 1.5;
+        
+        // Connect: audio element -> gain -> analyser -> destination
+        this.audioSource.connect(gainNode);
+        gainNode.connect(this.analyser);
+        this.audioSource.connect(this.audioContext.destination); // Also connect to speakers
+        
+        // Create data array
+        const bufferLength = this.analyser.frequencyBinCount;
+        this.dataArray = new Uint8Array(bufferLength);
+        
+        // Set up play/pause handlers
+        this.audioElement.onplay = () => {
+            if (this.audioContext.state === 'suspended') {
+                this.audioContext.resume();
+            }
+            this.isPaused = false;
+            if (this.playIcon) this.playIcon.style.display = 'none';
+            if (this.pauseIcon) this.pauseIcon.style.display = 'block';
+        };
+        
+        this.audioElement.onpause = () => {
+            this.isPaused = true;
+            if (this.playIcon) this.playIcon.style.display = 'block';
+            if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+        };
+        
+        this.audioElement.onended = () => {
+            this.isPaused = true;
+            if (this.playIcon) this.playIcon.style.display = 'block';
+            if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+        };
+        
+        // Start playing
+        try {
+            await this.audioElement.play();
+        } catch (e) {
+            // If autoplay is blocked, user will need to click play/pause
+            console.log('Autoplay blocked, waiting for user interaction');
+        }
+        
+        // Start visualization
         this.isRunning = true;
         this.isStarted = true;
-        this.isPaused = false;
+        this.isPaused = this.audioElement.paused;
         
         // Update button text
         if (this.visualizeBtn) {
@@ -267,18 +292,19 @@ class CymaticsVisualizer {
             this.visualizeBtn.disabled = false;
         }
         
-        // Show play/pause button next to visualize button
+        // Show play/pause button
         if (this.playPauseBtn) {
             this.playPauseBtn.style.display = 'flex';
-            if (this.pauseIcon) {
-                this.pauseIcon.style.display = 'block';
-            }
-            if (this.playIcon) {
-                this.playIcon.style.display = 'none';
+            if (this.isPaused) {
+                if (this.playIcon) this.playIcon.style.display = 'block';
+                if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+            } else {
+                if (this.playIcon) this.playIcon.style.display = 'none';
+                if (this.pauseIcon) this.pauseIcon.style.display = 'block';
             }
         }
         
-        console.log('Visualization started - play/pause button should be visible');
+        console.log('Audio loaded and visualization started');
         
         // Start animation if not already running
         if (!this.animationId) {
@@ -286,126 +312,12 @@ class CymaticsVisualizer {
         }
     }
     
-    async start() {
-        try {
-            // Stop any existing capture
-            if (this.isRunning) {
-                this.stop();
-            }
-            
-            // Clean up old audio nodes
-            if (this.audioSource) {
-                try {
-                    this.audioSource.disconnect();
-                } catch (e) {}
-                this.audioSource = null;
-            }
-            
-            if (this.mediaStream) {
-                this.mediaStream.getTracks().forEach(track => track.stop());
-                this.mediaStream = null;
-            }
-            
-            this.analyser = null;
-            this.dataArray = null;
-            
-            // Request screen/audio capture IMMEDIATELY (must be from user gesture)
-            // User selects the browser window/tab with the YouTube video
-            this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: {
-                    displaySurface: 'browser'
-                },
-                audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false,
-                    suppressLocalAudioPlayback: false
-                }
-            });
-            
-            // Check if we got audio tracks
-            const audioTracks = this.mediaStream.getAudioTracks();
-            if (audioTracks.length === 0) {
-                throw new Error('No audio track found. Please select "Share audio" when sharing your screen.');
-            }
-            
-            // Create or get audio context
-            if (!this.audioContext || this.audioContext.state === 'closed') {
-                const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-                this.audioContext = new AudioContextClass();
-            }
-            
-            // Resume if suspended
-            if (this.audioContext.state === 'suspended') {
-                await this.audioContext.resume();
-            }
-            
-            // Create analyser with better settings for responsiveness
-            this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.3; // Lower = more responsive
-            
-            // Create audio source from media stream
-            this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
-            
-            // Create gain node to amplify signal if needed
-            const gainNode = this.audioContext.createGain();
-            gainNode.gain.value = 1.5; // Boost audio signal
-            
-            // Connect: source -> gain -> analyser
-            this.audioSource.connect(gainNode);
-            gainNode.connect(this.analyser);
-            
-            // Create data array
-            const bufferLength = this.analyser.frequencyBinCount;
-            this.dataArray = new Uint8Array(bufferLength);
-            
-            console.log('Audio capture started:', {
-                sampleRate: this.audioContext.sampleRate,
-                bufferLength: bufferLength,
-                audioTracks: audioTracks.length
-            });
-            
-            // Handle stream ending (user stops sharing)
-            audioTracks[0].onended = () => {
-                this.stop();
-            };
-            
-            // Don't start visualization yet - wait for YouTube video to load
-            // isRunning will be set after YouTube video is loaded
-            console.log('Screen capture started - waiting for YouTube video to load');
-            
-            // Return success - visualization will start after YouTube loads
-            
-        } catch (error) {
-            console.error('Audio capture error:', error);
-            
-            let message = 'Unable to capture audio. ';
-            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                message += 'Please allow screen/audio sharing. When prompted, select the browser window and make sure "Share audio" is checked.';
-            } else if (error.name === 'NotFoundError') {
-                message += 'No audio source found.';
-            } else {
-                message += error.message || 'Unknown error.';
-            }
-            
-            alert(message);
-            
-            this.isStarted = false;
-            this.isRunning = false;
-            
-            // Reset button text
-            if (this.visualizeBtn) {
-                this.visualizeBtn.textContent = 'VISUALIZE';
-            }
-        }
-    }
-    
     stop() {
-        // Stop media stream
-        if (this.mediaStream) {
-            this.mediaStream.getTracks().forEach(track => track.stop());
-            this.mediaStream = null;
+        // Stop audio element
+        if (this.audioElement) {
+            this.audioElement.pause();
+            this.audioElement.src = '';
+            this.audioElement = null;
         }
         
         // Disconnect audio source
@@ -415,6 +327,10 @@ class CymaticsVisualizer {
             } catch (e) {}
             this.audioSource = null;
         }
+        
+        // Clear analyser
+        this.analyser = null;
+        this.dataArray = null;
         
         // Don't cancel animation - let it continue for initial pattern
         this.isRunning = false;
