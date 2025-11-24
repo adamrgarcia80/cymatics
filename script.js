@@ -447,8 +447,6 @@ class CymaticsVisualizer {
         
         // Only draw particles if there's any visibility (from sound or dissolve)
         if (this.dissolveAlpha <= 0 && !hasSound) {
-            this.frequencyDisplay.textContent = '--';
-            this.amplitudeDisplay.textContent = '--';
             return;
         }
         
@@ -574,11 +572,7 @@ class CymaticsVisualizer {
         
         // Update displays
         if (hasSound || this.dissolveAlpha > 0.1) {
-            this.frequencyDisplay.textContent = Math.round(frequency);
-            this.amplitudeDisplay.textContent = Math.round(intensity * 100);
         } else {
-            this.frequencyDisplay.textContent = '--';
-            this.amplitudeDisplay.textContent = '--';
         }
     }
     
