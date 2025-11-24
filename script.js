@@ -140,20 +140,40 @@ class CymaticsVisualizer {
             // Create analyser - MUST be fresh, never reused
             this.analyser = this.audioContext.createAnalyser();
             
-            // Set properties IMMEDIATELY - before ANY connections or operations
-            // Safari locks these properties after any connection
-            const fftSize = 2048;
-            const smoothing = 0.6;
+            // Safari workaround: Try to set properties but catch readonly errors
+            // Use default values if we can't set them
+            let fftSize = 2048;
+            let smoothing = 0.6;
             
-            // Set properties using direct assignment (Safari-safe)
-            this.analyser.fftSize = fftSize;
-            this.analyser.smoothingTimeConstant = smoothing;
+            try {
+                this.analyser.fftSize = fftSize;
+            } catch (e) {
+                console.warn('Could not set fftSize, using default:', e);
+                // Use default fftSize (256)
+                fftSize = this.analyser.fftSize;
+            }
             
-            // Get buffer length BEFORE creating source
-            const bufferLength = this.analyser.frequencyBinCount;
+            try {
+                this.analyser.smoothingTimeConstant = smoothing;
+            } catch (e) {
+                console.warn('Could not set smoothingTimeConstant, using default:', e);
+                // Use default smoothing (0.8)
+                smoothing = this.analyser.smoothingTimeConstant;
+            }
+            
+            // Get buffer length - this property is readonly but we can read it
+            let bufferLength;
+            try {
+                bufferLength = this.analyser.frequencyBinCount;
+            } catch (e) {
+                console.warn('Could not read frequencyBinCount, using calculated value:', e);
+                // Calculate from fftSize: frequencyBinCount = fftSize / 2
+                bufferLength = fftSize / 2;
+            }
+            
             this.dataArray = new Uint8Array(bufferLength);
             
-            // ONLY NOW create the source node
+            // Create source node AFTER analyser is fully configured
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
             // Connect AFTER everything is configured
@@ -232,30 +252,48 @@ class CymaticsVisualizer {
         }
         
         try {
+            // This can fail if analyser is in a bad state
             this.analyser.getByteFrequencyData(this.dataArray);
         } catch (e) {
             console.warn('Error getting frequency data:', e);
+            // Return silent data if we can't read
             return { frequency: 0, amplitude: 0, spectrum: [] };
         }
         
         let maxIndex = 0;
         let maxValue = 0;
-        for (let i = 0; i < this.dataArray.length; i++) {
-            if (this.dataArray[i] > maxValue) {
-                maxValue = this.dataArray[i];
+        
+        // Safely iterate through data array
+        const arrayLength = this.dataArray ? this.dataArray.length : 0;
+        if (arrayLength === 0) {
+            return { frequency: 0, amplitude: 0, spectrum: [] };
+        }
+        
+        for (let i = 0; i < arrayLength; i++) {
+            const value = this.dataArray[i] || 0;
+            if (value > maxValue) {
+                maxValue = value;
                 maxIndex = i;
             }
         }
         
-        const sampleRate = this.audioContext?.sampleRate || 44100;
-        const nyquist = sampleRate / 2;
-        const frequency = (maxIndex * nyquist) / this.dataArray.length;
-        
-        let sum = 0;
-        for (let i = 0; i < this.dataArray.length; i++) {
-            sum += this.dataArray[i];
+        // Calculate frequency safely
+        let sampleRate = 44100; // default
+        try {
+            sampleRate = this.audioContext.sampleRate || 44100;
+        } catch (e) {
+            console.warn('Could not read sampleRate:', e);
         }
-        const amplitude = sum / this.dataArray.length / 255;
+        
+        const nyquist = sampleRate / 2;
+        const frequency = arrayLength > 0 ? (maxIndex * nyquist) / arrayLength : 0;
+        
+        // Calculate amplitude
+        let sum = 0;
+        for (let i = 0; i < arrayLength; i++) {
+            sum += this.dataArray[i] || 0;
+        }
+        const amplitude = arrayLength > 0 ? sum / arrayLength / 255 : 0;
         
         return {
             frequency: frequency,
