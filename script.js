@@ -290,20 +290,31 @@ class CymaticsVisualizer {
                 await this.audioContext.resume();
             }
             
-            // Create analyser
+            // Create analyser with better settings for responsiveness
             this.analyser = this.audioContext.createAnalyser();
             this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.6;
+            this.analyser.smoothingTimeConstant = 0.3; // Lower = more responsive
             
             // Create audio source from media stream
             this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
             
-            // Connect source to analyser
-            this.audioSource.connect(this.analyser);
+            // Create gain node to amplify signal if needed
+            const gainNode = this.audioContext.createGain();
+            gainNode.gain.value = 1.5; // Boost audio signal
+            
+            // Connect: source -> gain -> analyser
+            this.audioSource.connect(gainNode);
+            gainNode.connect(this.analyser);
             
             // Create data array
             const bufferLength = this.analyser.frequencyBinCount;
             this.dataArray = new Uint8Array(bufferLength);
+            
+            console.log('Audio capture started:', {
+                sampleRate: this.audioContext.sampleRate,
+                bufferLength: bufferLength,
+                audioTracks: audioTracks.length
+            });
             
             // Handle stream ending (user stops sharing)
             audioTracks[0].onended = () => {
@@ -318,9 +329,10 @@ class CymaticsVisualizer {
             // Update button text
             if (this.visualizeBtn) {
                 this.visualizeBtn.textContent = 'STOP';
+                this.visualizeBtn.disabled = false;
             }
             
-            // Show play/pause button
+            // Show play/pause button next to visualize button
             if (this.playPauseBtn) {
                 this.playPauseBtn.style.display = 'flex';
                 if (this.pauseIcon) {
@@ -331,6 +343,7 @@ class CymaticsVisualizer {
                 }
             }
             
+            console.log('Visualization started - play/pause button should be visible');
             this.animate();
             
         } catch (error) {
@@ -397,17 +410,23 @@ class CymaticsVisualizer {
             return { frequency: 0, amplitude: 0, spectrum: [] };
         }
         
-        try {
-            // This can fail if analyser is in a bad state
-            this.analyser.getByteFrequencyData(this.dataArray);
-        } catch (e) {
-            console.warn('Error getting frequency data:', e);
-            // Return silent data if we can't read
+        // Check if audio context is still running
+        if (this.audioContext.state === 'closed' || this.audioContext.state === 'suspended') {
             return { frequency: 0, amplitude: 0, spectrum: [] };
         }
         
-        let maxIndex = 0;
-        let maxValue = 0;
+        try {
+            // Get frequency data
+            this.analyser.getByteFrequencyData(this.dataArray);
+            
+            // Also get time domain data for better amplitude detection
+            const timeData = new Uint8Array(this.analyser.frequencyBinCount);
+            this.analyser.getByteTimeDomainData(timeData);
+            
+        } catch (e) {
+            console.warn('Error getting audio data:', e);
+            return { frequency: 0, amplitude: 0, spectrum: [] };
+        }
         
         // Safely iterate through data array
         const arrayLength = this.dataArray ? this.dataArray.length : 0;
@@ -415,6 +434,10 @@ class CymaticsVisualizer {
             return { frequency: 0, amplitude: 0, spectrum: [] };
         }
         
+        let maxIndex = 0;
+        let maxValue = 0;
+        
+        // Find peak frequency
         for (let i = 0; i < arrayLength; i++) {
             const value = this.dataArray[i] || 0;
             if (value > maxValue) {
@@ -423,8 +446,8 @@ class CymaticsVisualizer {
             }
         }
         
-        // Calculate frequency safely
-        let sampleRate = 44100; // default
+        // Calculate frequency
+        let sampleRate = 44100;
         try {
             sampleRate = this.audioContext.sampleRate || 44100;
         } catch (e) {
@@ -434,24 +457,46 @@ class CymaticsVisualizer {
         const nyquist = sampleRate / 2;
         const frequency = arrayLength > 0 ? (maxIndex * nyquist) / arrayLength : 0;
         
-        // Calculate amplitude
+        // Calculate amplitude - use both frequency and time domain for accuracy
         let sum = 0;
         for (let i = 0; i < arrayLength; i++) {
             sum += this.dataArray[i] || 0;
         }
-        const amplitude = arrayLength > 0 ? sum / arrayLength / 255 : 0;
+        const freqAmplitude = arrayLength > 0 ? sum / arrayLength / 255 : 0;
+        
+        // Also check time domain for better amplitude detection
+        const timeSum = timeData.reduce((acc, val) => acc + Math.abs(val - 128), 0);
+        const timeAmplitude = timeData.length > 0 ? timeSum / timeData.length / 128 : 0;
+        
+        // Use the higher of the two for better responsiveness
+        const amplitude = Math.max(freqAmplitude, timeAmplitude * 1.5);
         
         return {
             frequency: frequency,
             amplitude: amplitude,
-            spectrum: []
+            spectrum: Array.from(this.dataArray)
         };
     }
     
     drawInitialPattern() {
-        // Draw default cymatic pattern (not just black)
-        const defaultAudioData = { frequency: 440, amplitude: 0.3, spectrum: [] };
-        this.drawCymaticPattern(defaultAudioData);
+        // Increment time for pulsing animation
+        this.time += 0.02;
+        
+        // Clear to pure black
+        this.ctx.fillStyle = '#000';
+        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        
+        // Draw small pulsing light in center
+        const pulseSize = 8 + Math.sin(this.time * 2) * 4; // Pulse between 4-12 pixels
+        const pulseAlpha = 0.5 + Math.sin(this.time * 3) * 0.3; // Pulse opacity
+        
+        this.ctx.save();
+        this.ctx.globalAlpha = pulseAlpha;
+        this.ctx.fillStyle = '#fff';
+        this.ctx.beginPath();
+        this.ctx.arc(this.centerX, this.centerY, pulseSize, 0, Math.PI * 2);
+        this.ctx.fill();
+        this.ctx.restore();
     }
     
     // Calculate wave displacement at a point (for cymatic patterns)
@@ -516,9 +561,9 @@ class CymaticsVisualizer {
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // For default pattern when not running, ensure dissolveAlpha is visible
-        if (!this.isRunning && !hasSound) {
-            this.dissolveAlpha = Math.max(this.dissolveAlpha, 0.5); // Keep default pattern visible
+        // Only draw particles when running
+        if (!this.isRunning) {
+            return; // Don't draw pattern when not running (pulsing light is drawn separately)
         }
         
         // Update particles based on wave pattern
@@ -665,13 +710,12 @@ class CymaticsVisualizer {
         // Always run animation, even without audio (for initial/default pattern)
         const audioData = this.getAudioData();
         
-        // Always draw pattern - it will show default pattern if not running
-        // When paused, it will continue showing pattern but YouTube audio is paused
+        // Always draw - show pulsing light when not running, full pattern when running
         if (this.isRunning) {
             this.drawCymaticPattern(audioData);
         } else {
-            // Show initial/default pattern when not running
-            this.drawCymaticPattern({ frequency: 440, amplitude: 0.3, spectrum: [] });
+            // Show small pulsing light when waiting
+            this.drawInitialPattern();
         }
         
         this.animationId = requestAnimationFrame(() => this.animate());
