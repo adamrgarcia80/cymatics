@@ -24,12 +24,12 @@ class CymaticsVisualizer {
         this.dissolveAlpha = 0; // Current dissolve state
         
         // Audio source
-        this.audioElement = null;
         this.audioSource = null;
+        this.mediaStream = null;
         
         // DOM elements
         this.toggleBtn = document.getElementById('toggleBtn');
-        this.fileInput = document.getElementById('audioFileInput');
+        this.instructions = document.getElementById('instructions');
         this.frequencyDisplay = document.getElementById('frequency');
         this.amplitudeDisplay = document.getElementById('amplitude');
         
@@ -85,11 +85,10 @@ class CymaticsVisualizer {
     }
     
     setupEventListeners() {
-        // Button toggles file picker or stops playback
+        // Button starts/stops audio capture
         this.toggleBtn.addEventListener('click', () => {
             if (!this.isStarted) {
-                // Open file picker
-                this.fileInput.click();
+                this.start();
             } else {
                 this.stop();
             }
@@ -98,24 +97,16 @@ class CymaticsVisualizer {
         this.toggleBtn.addEventListener('touchend', (e) => {
             e.preventDefault();
             if (!this.isStarted) {
-                this.fileInput.click();
+                this.start();
             } else {
                 this.stop();
             }
         });
-        
-        // Handle file selection
-        this.fileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                this.startWithFile(file);
-            }
-        });
     }
     
-    async startWithFile(file) {
+    async start() {
         try {
-            // Stop any existing playback
+            // Stop any existing capture
             if (this.isRunning) {
                 this.stop();
             }
@@ -127,12 +118,38 @@ class CymaticsVisualizer {
                 } catch (e) {}
                 this.audioSource = null;
             }
-            if (this.audioElement) {
-                this.audioElement.pause();
-                this.audioElement = null;
+            
+            if (this.mediaStream) {
+                this.mediaStream.getTracks().forEach(track => track.stop());
+                this.mediaStream = null;
             }
+            
             this.analyser = null;
             this.dataArray = null;
+            
+            // Show instructions
+            this.instructions.style.display = 'block';
+            
+            // Request screen/audio capture - user selects tab with audio
+            // This captures audio from any tab (YouTube, Spotify, etc.)
+            this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
+                video: false,
+                audio: {
+                    echoCancellation: false,
+                    noiseSuppression: false,
+                    autoGainControl: false,
+                    suppressLocalAudioPlayback: false
+                }
+            });
+            
+            // Hide instructions
+            this.instructions.style.display = 'none';
+            
+            // Check if we got audio tracks
+            const audioTracks = this.mediaStream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                throw new Error('No audio track found. Please share a tab with audio.');
+            }
             
             // Create or get audio context
             if (!this.audioContext || this.audioContext.state === 'closed') {
@@ -145,43 +162,25 @@ class CymaticsVisualizer {
                 await this.audioContext.resume();
             }
             
-            // Create HTML5 audio element
-            const audio = new Audio();
-            const objectUrl = URL.createObjectURL(file);
-            audio.src = objectUrl;
-            audio.crossOrigin = 'anonymous';
-            
-            // Wait for audio to be ready
-            await new Promise((resolve, reject) => {
-                audio.oncanplay = resolve;
-                audio.onerror = reject;
-                audio.load();
-            });
-            
             // Create analyser
-            const analyser = this.audioContext.createAnalyser();
-            analyser.fftSize = 2048;
-            analyser.smoothingTimeConstant = 0.6;
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 2048;
+            this.analyser.smoothingTimeConstant = 0.6;
             
-            // Create audio source from HTML5 audio element
-            const source = this.audioContext.createMediaElementSource(audio);
+            // Create audio source from media stream
+            this.audioSource = this.audioContext.createMediaStreamSource(this.mediaStream);
             
-            // Connect source to analyser to destination
-            source.connect(analyser);
-            analyser.connect(this.audioContext.destination);
+            // Connect source to analyser
+            this.audioSource.connect(this.analyser);
             
             // Create data array
-            const bufferLength = analyser.frequencyBinCount;
-            const dataArray = new Uint8Array(bufferLength);
+            const bufferLength = this.analyser.frequencyBinCount;
+            this.dataArray = new Uint8Array(bufferLength);
             
-            // Store references
-            this.audioElement = audio;
-            this.audioSource = source;
-            this.analyser = analyser;
-            this.dataArray = dataArray;
-            
-            // Start playback
-            await audio.play();
+            // Handle stream ending (user stops sharing)
+            audioTracks[0].onended = () => {
+                this.stop();
+            };
             
             // Start visualization
             this.isRunning = true;
@@ -191,10 +190,19 @@ class CymaticsVisualizer {
             this.animate();
             
         } catch (error) {
-            console.error('Audio file error:', error);
+            console.error('Audio capture error:', error);
             
-            let message = 'Unable to play audio file. ';
-            message += error.message || 'Unknown error.';
+            // Hide instructions on error
+            this.instructions.style.display = 'none';
+            
+            let message = 'Unable to capture audio. ';
+            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+                message += 'Please allow screen/audio sharing and select a tab with audio.';
+            } else if (error.name === 'NotFoundError') {
+                message += 'No audio source found.';
+            } else {
+                message += error.message || 'Unknown error.';
+            }
             
             alert(message);
             
@@ -205,14 +213,10 @@ class CymaticsVisualizer {
     }
     
     stop() {
-        // Stop audio playback
-        if (this.audioElement) {
-            this.audioElement.pause();
-            this.audioElement.currentTime = 0;
-            if (this.audioElement.src.startsWith('blob:')) {
-                URL.revokeObjectURL(this.audioElement.src);
-            }
-            this.audioElement = null;
+        // Stop media stream
+        if (this.mediaStream) {
+            this.mediaStream.getTracks().forEach(track => track.stop());
+            this.mediaStream = null;
         }
         
         // Disconnect audio source
@@ -229,16 +233,16 @@ class CymaticsVisualizer {
             this.animationId = null;
         }
         
+        // Hide instructions
+        if (this.instructions) {
+            this.instructions.style.display = 'none';
+        }
+        
         this.isRunning = false;
         this.isStarted = false;
         this.toggleBtn.style.opacity = '1';
         this.frequencyDisplay.textContent = '--';
         this.amplitudeDisplay.textContent = '--';
-        
-        // Reset file input
-        if (this.fileInput) {
-            this.fileInput.value = '';
-        }
         
         this.drawInitialPattern();
     }
