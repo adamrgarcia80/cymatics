@@ -70,26 +70,72 @@ body {
     }
 }
 
-.instructions {
+.url-input-container {
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    background: rgba(0, 0, 0, 0.9);
-    color: #fff;
-    padding: 2rem;
-    border-radius: 0.5rem;
-    font-family: 'Space Mono', 'Courier New', Courier, monospace;
-    font-size: 0.875rem;
-    text-align: center;
-    z-index: 2000;
-    border: 2px solid #fff;
-    max-width: 80%;
+    top: 1rem;
+    left: 1rem;
+    display: flex;
+    gap: 0.5rem;
+    z-index: 1500;
+    max-width: calc(100vw - 6rem);
 }
 
-.instructions p {
-    margin: 0;
-    line-height: 1.6;
+.url-input {
+    font-family: 'Space Mono', 'Courier New', Courier, monospace;
+    font-size: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: rgba(0, 0, 0, 0.9);
+    color: #fff;
+    border: 2px solid #fff;
+    border-radius: 0.25rem;
+    outline: none;
+    min-width: 200px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.url-input::placeholder {
+    color: #888;
+    text-transform: uppercase;
+}
+
+.load-btn {
+    font-family: 'Space Mono', 'Courier New', Courier, monospace;
+    font-size: 0.75rem;
+    padding: 0.75rem 1.5rem;
+    background: #fff;
+    color: #000;
+    border: 2px solid #fff;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    transition: opacity 0.2s;
+}
+
+.load-btn:hover {
+    opacity: 0.8;
+}
+
+.load-btn:active {
+    opacity: 0.6;
+}
+
+@media (max-width: 480px) {
+    .url-input-container {
+        flex-direction: column;
+        max-width: calc(100vw - 4rem);
+    }
+    
+    .url-input {
+        width: 100%;
+        min-width: auto;
+    }
+    
+    .load-btn {
+        width: 100%;
+    }
 }
 
 /* Tablet and up */

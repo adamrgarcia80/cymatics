@@ -26,10 +26,14 @@ class CymaticsVisualizer {
         // Audio source
         this.audioSource = null;
         this.mediaStream = null;
+        this.youtubePlayer = null;
+        this.youtubeIframe = null;
         
         // DOM elements
         this.toggleBtn = document.getElementById('toggleBtn');
-        this.instructions = document.getElementById('instructions');
+        this.urlInputContainer = document.getElementById('urlInputContainer');
+        this.youtubeUrlInput = document.getElementById('youtubeUrlInput');
+        this.loadBtn = document.getElementById('loadBtn');
         this.frequencyDisplay = document.getElementById('frequency');
         this.amplitudeDisplay = document.getElementById('amplitude');
         
@@ -106,6 +110,12 @@ class CymaticsVisualizer {
     
     async start() {
         try {
+            // Check if YouTube video is loaded
+            if (!this.youtubeIframe) {
+                alert('Please load a YouTube video first by pasting a URL and clicking LOAD.');
+                return;
+            }
+            
             // Stop any existing capture
             if (this.isRunning) {
                 this.stop();
@@ -127,13 +137,12 @@ class CymaticsVisualizer {
             this.analyser = null;
             this.dataArray = null;
             
-            // Show instructions
-            this.instructions.style.display = 'block';
-            
-            // Request screen/audio capture - user selects tab with audio
-            // This captures audio from any tab (YouTube, Spotify, etc.)
+            // Request screen/audio capture - user selects the YouTube iframe window
+            // This captures audio from the embedded YouTube video
             this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
-                video: false,
+                video: {
+                    displaySurface: 'browser'
+                },
                 audio: {
                     echoCancellation: false,
                     noiseSuppression: false,
@@ -142,13 +151,10 @@ class CymaticsVisualizer {
                 }
             });
             
-            // Hide instructions
-            this.instructions.style.display = 'none';
-            
             // Check if we got audio tracks
             const audioTracks = this.mediaStream.getAudioTracks();
             if (audioTracks.length === 0) {
-                throw new Error('No audio track found. Please share a tab with audio.');
+                throw new Error('No audio track found. Please select "Share audio" when sharing your screen.');
             }
             
             // Create or get audio context
@@ -192,12 +198,9 @@ class CymaticsVisualizer {
         } catch (error) {
             console.error('Audio capture error:', error);
             
-            // Hide instructions on error
-            this.instructions.style.display = 'none';
-            
             let message = 'Unable to capture audio. ';
             if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                message += 'Please allow screen/audio sharing and select a tab with audio.';
+                message += 'Please allow screen/audio sharing. When prompted, select the browser window and make sure "Share audio" is checked.';
             } else if (error.name === 'NotFoundError') {
                 message += 'No audio source found.';
             } else {
@@ -231,11 +234,6 @@ class CymaticsVisualizer {
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
             this.animationId = null;
-        }
-        
-        // Hide instructions
-        if (this.instructions) {
-            this.instructions.style.display = 'none';
         }
         
         this.isRunning = false;
