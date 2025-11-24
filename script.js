@@ -101,73 +101,39 @@ class CymaticsVisualizer {
     }
     
     async start() {
-        // Stop everything first - Safari needs clean state
-        if (this.isRunning) {
-            this.stop();
-            await new Promise(resolve => setTimeout(resolve, 200));
-        }
-        
         try {
-            // Check support
-            if (!navigator.mediaDevices?.getUserMedia) {
-                throw new Error('getUserMedia not supported');
+            // Stop any existing stream
+            if (this.isRunning) {
+                this.stop();
             }
             
-            // Request microphone
+            // Get microphone stream
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            
-            if (!stream?.getAudioTracks()?.length) {
-                throw new Error('No audio tracks');
-            }
-            
-            // Store stream
             this.stream = stream;
             
-            // Safari workaround: Close old context completely if it exists
-            if (this.audioContext) {
-                try {
-                    if (this.audioContext.state !== 'closed') {
-                        await this.audioContext.close();
-                    }
-                } catch (e) {
-                    console.warn('Error closing old context:', e);
-                }
-                this.audioContext = null;
+            // Create or reuse audio context
+            if (!this.audioContext || this.audioContext.state === 'closed') {
+                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
             }
             
-            // Create BRAND NEW AudioContext every time (Safari requirement)
-            if (window.AudioContext) {
-                this.audioContext = new AudioContext();
-            } else if (window.webkitAudioContext) {
-                this.audioContext = new webkitAudioContext();
-            } else {
-                throw new Error('AudioContext not supported');
-            }
-            
-            // Resume if suspended (always needed in Safari)
+            // Resume if suspended
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
             
-            // Wait a tiny bit for Safari to initialize
-            await new Promise(resolve => setTimeout(resolve, 50));
-            
-            // Create analyser node
+            // Create analyser
             this.analyser = this.audioContext.createAnalyser();
-            
-            // Set properties BEFORE creating source or connecting anything
-            // This is critical - once connected, Safari makes properties readonly
             this.analyser.fftSize = 2048;
             this.analyser.smoothingTimeConstant = 0.6;
             
-            // Create data array
-            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
-            
-            // Create source node AFTER analyser is configured
+            // Create microphone source
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Connect source to analyser
+            // Connect microphone to analyser
             this.microphone.connect(this.analyser);
+            
+            // Create data array
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
             // Start visualization
             this.isRunning = true;
@@ -177,29 +143,25 @@ class CymaticsVisualizer {
             this.animate();
             
         } catch (error) {
-            console.error('Start error:', error);
-            console.error('Error stack:', error.stack);
+            console.error('Microphone error:', error);
             
             // Cleanup on error
             if (this.stream) {
-                this.stream.getTracks().forEach(t => {
-                    t.stop();
-                    t.enabled = false;
-                });
+                this.stream.getTracks().forEach(track => track.stop());
                 this.stream = null;
             }
             
-            // Show user-friendly error
-            let msg = 'Unable to access microphone: ';
+            // Show error
+            let message = 'Unable to access microphone. ';
             if (error.name === 'NotAllowedError') {
-                msg += 'Permission denied. Please allow microphone access.';
+                message += 'Please allow microphone permissions.';
             } else if (error.name === 'NotFoundError') {
-                msg += 'No microphone found.';
+                message += 'No microphone found.';
             } else {
-                msg += error.message || error.toString();
+                message += error.message || 'Unknown error.';
             }
             
-            alert(msg);
+            alert(message);
             
             this.isStarted = false;
             this.isRunning = false;
@@ -208,33 +170,19 @@ class CymaticsVisualizer {
     }
     
     stop() {
-        // Stop microphone stream using stored reference
+        // Stop stream tracks
         if (this.stream) {
-            this.stream.getTracks().forEach(track => {
-                track.stop();
-                track.enabled = false;
-            });
+            this.stream.getTracks().forEach(track => track.stop());
             this.stream = null;
         }
         
-        // Disconnect microphone node
+        // Disconnect microphone
         if (this.microphone) {
-            try {
-                this.microphone.disconnect();
-            } catch (e) {
-                console.warn('Error disconnecting microphone:', e);
-            }
+            this.microphone.disconnect();
             this.microphone = null;
         }
         
-        // Don't close audio context - just suspend it to allow restart
-        // Closing it causes issues when trying to restart
-        if (this.audioContext && this.audioContext.state !== 'closed') {
-            this.audioContext.suspend().catch(err => {
-                console.warn('Could not suspend audio context:', err);
-            });
-        }
-        
+        // Stop animation
         if (this.animationId) {
             cancelAnimationFrame(this.animationId);
             this.animationId = null;
