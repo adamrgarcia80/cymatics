@@ -140,44 +140,42 @@ class CymaticsVisualizer {
             // Create analyser - MUST be fresh, never reused
             this.analyser = this.audioContext.createAnalyser();
             
-            // Safari workaround: Try to set properties but catch readonly errors
-            // Use default values if we can't set them
-            let fftSize = 2048;
-            let smoothing = 0.6;
+            // Safari workaround: Don't set properties - use defaults
+            // This avoids triggering Safari's readonly property errors
+            // Default fftSize is 2048, default smoothing is 0.8
             
+            // Try to set properties with fallback to defaults
             try {
-                this.analyser.fftSize = fftSize;
+                this.analyser.fftSize = 2048;
             } catch (e) {
-                console.warn('Could not set fftSize, using default:', e);
-                // Use default fftSize (256)
-                fftSize = this.analyser.fftSize;
+                console.warn('Cannot set fftSize (readonly), using default');
             }
             
             try {
-                this.analyser.smoothingTimeConstant = smoothing;
+                this.analyser.smoothingTimeConstant = 0.6;
             } catch (e) {
-                console.warn('Could not set smoothingTimeConstant, using default:', e);
-                // Use default smoothing (0.8)
-                smoothing = this.analyser.smoothingTimeConstant;
+                console.warn('Cannot set smoothingTimeConstant (readonly), using default');
             }
             
-            // Get buffer length - this property is readonly but we can read it
-            let bufferLength;
+            // Create source node BEFORE accessing frequencyBinCount
+            // This might prevent Safari from locking properties
+            this.microphone = this.audioContext.createMediaStreamSource(stream);
+            
+            // Connect first
+            this.microphone.connect(this.analyser);
+            
+            // NOW get buffer length after connection
+            // frequencyBinCount is readonly but readable
+            let bufferLength = 1024; // default fallback
             try {
                 bufferLength = this.analyser.frequencyBinCount;
             } catch (e) {
-                console.warn('Could not read frequencyBinCount, using calculated value:', e);
-                // Calculate from fftSize: frequencyBinCount = fftSize / 2
-                bufferLength = fftSize / 2;
+                console.warn('Cannot read frequencyBinCount:', e);
+                // Calculate: default fftSize 2048 / 2 = 1024
+                bufferLength = 1024;
             }
             
             this.dataArray = new Uint8Array(bufferLength);
-            
-            // Create source node AFTER analyser is fully configured
-            this.microphone = this.audioContext.createMediaStreamSource(stream);
-            
-            // Connect AFTER everything is configured
-            this.microphone.connect(this.analyser);
             
             // Start visualization
             this.isRunning = true;
