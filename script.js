@@ -137,44 +137,20 @@ class CymaticsVisualizer {
                 await this.audioContext.resume();
             }
             
-            // Create analyser - MUST be fresh, never reused
+            // Create analyser with NO property assignments
+            // Safari has issues with setting analyser properties
+            // Default fftSize is 2048, which is fine for our use case
             this.analyser = this.audioContext.createAnalyser();
             
-            // Safari workaround: Don't set properties - use defaults
-            // This avoids triggering Safari's readonly property errors
-            // Default fftSize is 2048, default smoothing is 0.8
-            
-            // Try to set properties with fallback to defaults
-            try {
-                this.analyser.fftSize = 2048;
-            } catch (e) {
-                console.warn('Cannot set fftSize (readonly), using default');
-            }
-            
-            try {
-                this.analyser.smoothingTimeConstant = 0.6;
-            } catch (e) {
-                console.warn('Cannot set smoothingTimeConstant (readonly), using default');
-            }
-            
-            // Create source node BEFORE accessing frequencyBinCount
-            // This might prevent Safari from locking properties
+            // Create microphone source
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Connect first
+            // Connect immediately - before accessing any properties
             this.microphone.connect(this.analyser);
             
-            // NOW get buffer length after connection
-            // frequencyBinCount is readonly but readable
-            let bufferLength = 1024; // default fallback
-            try {
-                bufferLength = this.analyser.frequencyBinCount;
-            } catch (e) {
-                console.warn('Cannot read frequencyBinCount:', e);
-                // Calculate: default fftSize 2048 / 2 = 1024
-                bufferLength = 1024;
-            }
-            
+            // Read frequencyBinCount (it's readonly but readable)
+            // Default analyser has fftSize 2048, so frequencyBinCount = 1024
+            const bufferLength = this.analyser.frequencyBinCount;
             this.dataArray = new Uint8Array(bufferLength);
             
             // Start visualization
