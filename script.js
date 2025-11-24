@@ -30,10 +30,9 @@ class CymaticsVisualizer {
         this.youtubeIframe = null;
         
         // DOM elements
-        this.toggleBtn = document.getElementById('toggleBtn');
         this.urlInputContainer = document.getElementById('urlInputContainer');
         this.youtubeUrlInput = document.getElementById('youtubeUrlInput');
-        this.loadBtn = document.getElementById('loadBtn');
+        this.visualizeBtn = document.getElementById('visualizeBtn');
         this.frequencyDisplay = document.getElementById('frequency');
         this.amplitudeDisplay = document.getElementById('amplitude');
         
@@ -89,10 +88,14 @@ class CymaticsVisualizer {
     }
     
     setupEventListeners() {
-        // Load button - loads YouTube video
-        if (this.loadBtn) {
-            this.loadBtn.addEventListener('click', () => {
-                this.loadYouTubeVideo();
+        // Visualize button - loads video and starts visualization
+        if (this.visualizeBtn) {
+            this.visualizeBtn.addEventListener('click', () => {
+                if (this.isStarted) {
+                    this.stop();
+                } else {
+                    this.loadAndVisualize();
+                }
             });
         }
         
@@ -100,28 +103,14 @@ class CymaticsVisualizer {
         if (this.youtubeUrlInput) {
             this.youtubeUrlInput.addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') {
-                    this.loadYouTubeVideo();
+                    if (this.isStarted) {
+                        this.stop();
+                    } else {
+                        this.loadAndVisualize();
+                    }
                 }
             });
         }
-        
-        // Toggle button - starts/stops audio capture
-        this.toggleBtn.addEventListener('click', () => {
-            if (!this.isStarted) {
-                this.start();
-            } else {
-                this.stop();
-            }
-        });
-        
-        this.toggleBtn.addEventListener('touchend', (e) => {
-            e.preventDefault();
-            if (!this.isStarted) {
-                this.start();
-            } else {
-                this.stop();
-            }
-        });
     }
     
     extractVideoId(url) {
@@ -140,7 +129,7 @@ class CymaticsVisualizer {
         return null;
     }
     
-    loadYouTubeVideo() {
+    async loadAndVisualize() {
         const url = this.youtubeUrlInput.value.trim();
         if (!url) {
             alert('Please enter a YouTube URL');
@@ -178,20 +167,18 @@ class CymaticsVisualizer {
         
         document.body.appendChild(this.youtubeIframe);
         
-        // Hide URL input after loading
+        // Hide URL input
         if (this.urlInputContainer) {
             this.urlInputContainer.style.display = 'none';
         }
+        
+        // Start visualization IMMEDIATELY - must be called from user gesture
+        // Don't use setTimeout as it breaks the user gesture requirement
+        await this.start();
     }
     
     async start() {
         try {
-            // Check if YouTube video is loaded
-            if (!this.youtubeIframe) {
-                alert('Please load a YouTube video first by pasting a URL and clicking LOAD.');
-                return;
-            }
-            
             // Stop any existing capture
             if (this.isRunning) {
                 this.stop();
@@ -213,8 +200,8 @@ class CymaticsVisualizer {
             this.analyser = null;
             this.dataArray = null;
             
-            // Request screen/audio capture - user selects the YouTube iframe window
-            // This captures audio from the embedded YouTube video
+            // Request screen/audio capture IMMEDIATELY (must be from user gesture)
+            // User selects the browser window/tab with the YouTube video
             this.mediaStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     displaySurface: 'browser'
@@ -267,7 +254,11 @@ class CymaticsVisualizer {
             // Start visualization
             this.isRunning = true;
             this.isStarted = true;
-            this.toggleBtn.style.opacity = '0.5';
+            
+            // Update button text
+            if (this.visualizeBtn) {
+                this.visualizeBtn.textContent = 'STOP';
+            }
             
             this.animate();
             
@@ -287,7 +278,11 @@ class CymaticsVisualizer {
             
             this.isStarted = false;
             this.isRunning = false;
-            this.toggleBtn.style.opacity = '1';
+            
+            // Reset button text
+            if (this.visualizeBtn) {
+                this.visualizeBtn.textContent = 'VISUALIZE';
+            }
         }
     }
     
@@ -314,7 +309,17 @@ class CymaticsVisualizer {
         
         this.isRunning = false;
         this.isStarted = false;
-        this.toggleBtn.style.opacity = '1';
+        
+        // Reset button text
+        if (this.visualizeBtn) {
+            this.visualizeBtn.textContent = 'VISUALIZE';
+        }
+        
+        // Show URL input again
+        if (this.urlInputContainer) {
+            this.urlInputContainer.style.display = 'flex';
+        }
+        
         this.frequencyDisplay.textContent = '--';
         this.amplitudeDisplay.textContent = '--';
         
