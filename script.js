@@ -145,11 +145,18 @@ class CymaticsVisualizer {
             }
             
             console.log('Creating analyser...');
-            // Create analyser with NO property assignments
-            // Safari has issues with setting analyser properties
-            // Default fftSize is 2048, which is fine for our use case
+            // Create analyser - don't set any properties
             this.analyser = this.audioContext.createAnalyser();
             console.log('Analyser created');
+            
+            // Use fixed buffer size to avoid accessing frequencyBinCount (Safari issue)
+            // Default analyser fftSize is 2048, so frequencyBinCount = 1024
+            const bufferLength = 1024;
+            console.log('Using fixed buffer length:', bufferLength);
+            
+            console.log('Creating data array...');
+            this.dataArray = new Uint8Array(bufferLength);
+            console.log('Data array created');
             
             console.log('Creating microphone source...');
             // Create microphone source
@@ -157,19 +164,9 @@ class CymaticsVisualizer {
             console.log('Microphone source created');
             
             console.log('Connecting...');
-            // Connect immediately - before accessing any properties
+            // Connect immediately
             this.microphone.connect(this.analyser);
             console.log('Connected');
-            
-            console.log('Reading frequencyBinCount...');
-            // Read frequencyBinCount (it's readonly but readable)
-            // Default analyser has fftSize 2048, so frequencyBinCount = 1024
-            const bufferLength = this.analyser.frequencyBinCount;
-            console.log('Buffer length:', bufferLength);
-            
-            console.log('Creating data array...');
-            this.dataArray = new Uint8Array(bufferLength);
-            console.log('Data array created');
             
             // Start visualization
             this.isRunning = true;
