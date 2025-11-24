@@ -102,38 +102,62 @@ class CymaticsVisualizer {
     
     async start() {
         try {
-            // Stop any existing stream
+            // Stop any existing stream first
             if (this.isRunning) {
                 this.stop();
             }
+            
+            // Clean up old analyser and microphone completely
+            if (this.microphone) {
+                try {
+                    this.microphone.disconnect();
+                } catch (e) {}
+                this.microphone = null;
+            }
+            this.analyser = null;
+            this.dataArray = null;
             
             // Get microphone stream
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             this.stream = stream;
             
-            // Create or reuse audio context
-            if (!this.audioContext || this.audioContext.state === 'closed') {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            // Close old context if it exists (Safari needs fresh context)
+            if (this.audioContext && this.audioContext.state !== 'closed') {
+                try {
+                    await this.audioContext.close();
+                } catch (e) {}
             }
+            
+            // Create brand new audio context every time (Safari requirement)
+            const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+            this.audioContext = new AudioContextClass();
             
             // Resume if suspended
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
             }
             
-            // Create analyser
+            // Create analyser - MUST be fresh, never reused
             this.analyser = this.audioContext.createAnalyser();
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.6;
             
-            // Create microphone source
+            // Set properties IMMEDIATELY - before ANY connections or operations
+            // Safari locks these properties after any connection
+            const fftSize = 2048;
+            const smoothing = 0.6;
+            
+            // Set properties using direct assignment (Safari-safe)
+            this.analyser.fftSize = fftSize;
+            this.analyser.smoothingTimeConstant = smoothing;
+            
+            // Get buffer length BEFORE creating source
+            const bufferLength = this.analyser.frequencyBinCount;
+            this.dataArray = new Uint8Array(bufferLength);
+            
+            // ONLY NOW create the source node
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Connect microphone to analyser
+            // Connect AFTER everything is configured
             this.microphone.connect(this.analyser);
-            
-            // Create data array
-            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
             // Start visualization
             this.isRunning = true;
@@ -144,6 +168,11 @@ class CymaticsVisualizer {
             
         } catch (error) {
             console.error('Microphone error:', error);
+            console.error('Error details:', {
+                name: error.name,
+                message: error.message,
+                stack: error.stack
+            });
             
             // Cleanup on error
             if (this.stream) {
