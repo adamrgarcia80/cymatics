@@ -102,6 +102,8 @@ class CymaticsVisualizer {
     
     async start() {
         try {
+            console.log('Starting microphone access...');
+            
             // Stop any existing stream first
             if (this.isRunning) {
                 this.stop();
@@ -117,9 +119,11 @@ class CymaticsVisualizer {
             this.analyser = null;
             this.dataArray = null;
             
+            console.log('Requesting microphone...');
             // Get microphone stream
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             this.stream = stream;
+            console.log('Microphone stream obtained');
             
             // Close old context if it exists (Safari needs fresh context)
             if (this.audioContext && this.audioContext.state !== 'closed') {
@@ -128,35 +132,50 @@ class CymaticsVisualizer {
                 } catch (e) {}
             }
             
+            console.log('Creating AudioContext...');
             // Create brand new audio context every time (Safari requirement)
             const AudioContextClass = window.AudioContext || window.webkitAudioContext;
             this.audioContext = new AudioContextClass();
+            console.log('AudioContext created, state:', this.audioContext.state);
             
             // Resume if suspended
             if (this.audioContext.state === 'suspended') {
                 await this.audioContext.resume();
+                console.log('AudioContext resumed');
             }
             
+            console.log('Creating analyser...');
             // Create analyser with NO property assignments
             // Safari has issues with setting analyser properties
             // Default fftSize is 2048, which is fine for our use case
             this.analyser = this.audioContext.createAnalyser();
+            console.log('Analyser created');
             
+            console.log('Creating microphone source...');
             // Create microphone source
             this.microphone = this.audioContext.createMediaStreamSource(stream);
+            console.log('Microphone source created');
             
+            console.log('Connecting...');
             // Connect immediately - before accessing any properties
             this.microphone.connect(this.analyser);
+            console.log('Connected');
             
+            console.log('Reading frequencyBinCount...');
             // Read frequencyBinCount (it's readonly but readable)
             // Default analyser has fftSize 2048, so frequencyBinCount = 1024
             const bufferLength = this.analyser.frequencyBinCount;
+            console.log('Buffer length:', bufferLength);
+            
+            console.log('Creating data array...');
             this.dataArray = new Uint8Array(bufferLength);
+            console.log('Data array created');
             
             // Start visualization
             this.isRunning = true;
             this.isStarted = true;
             this.toggleBtn.style.opacity = '0.5';
+            console.log('Starting animation...');
             
             this.animate();
             
@@ -165,7 +184,9 @@ class CymaticsVisualizer {
             console.error('Error details:', {
                 name: error.name,
                 message: error.message,
-                stack: error.stack
+                stack: error.stack,
+                line: error.line,
+                column: error.column
             });
             
             // Cleanup on error
