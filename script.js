@@ -7,6 +7,7 @@ class CymaticsVisualizer {
         this.audioContext = null;
         this.analyser = null;
         this.microphone = null;
+        this.stream = null; // Store stream reference separately
         this.dataArray = null;
         this.isRunning = false;
         this.animationId = null;
@@ -136,6 +137,9 @@ class CymaticsVisualizer {
                 }
             }
             
+            // Store stream reference for cleanup
+            this.stream = stream;
+            
             this.analyser = this.audioContext.createAnalyser();
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
@@ -181,11 +185,21 @@ class CymaticsVisualizer {
     }
     
     stop() {
-        // Stop microphone stream
+        // Stop microphone stream using stored reference
+        if (this.stream) {
+            this.stream.getTracks().forEach(track => {
+                track.stop();
+                track.enabled = false;
+            });
+            this.stream = null;
+        }
+        
+        // Disconnect microphone node
         if (this.microphone) {
-            this.microphone.disconnect();
-            if (this.microphone.mediaStream) {
-                this.microphone.mediaStream.getTracks().forEach(track => track.stop());
+            try {
+                this.microphone.disconnect();
+            } catch (e) {
+                console.warn('Error disconnecting microphone:', e);
             }
             this.microphone = null;
         }
