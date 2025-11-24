@@ -226,11 +226,16 @@ class CymaticsVisualizer {
     }
     
     getAudioData() {
-        if (!this.analyser || !this.dataArray) {
+        if (!this.analyser || !this.dataArray || !this.audioContext) {
             return { frequency: 0, amplitude: 0, spectrum: [] };
         }
         
-        this.analyser.getByteFrequencyData(this.dataArray);
+        try {
+            this.analyser.getByteFrequencyData(this.dataArray);
+        } catch (e) {
+            console.warn('Error getting frequency data:', e);
+            return { frequency: 0, amplitude: 0, spectrum: [] };
+        }
         
         let maxIndex = 0;
         let maxValue = 0;
@@ -241,7 +246,8 @@ class CymaticsVisualizer {
             }
         }
         
-        const nyquist = this.audioContext.sampleRate / 2;
+        const sampleRate = this.audioContext?.sampleRate || 44100;
+        const nyquist = sampleRate / 2;
         const frequency = (maxIndex * nyquist) / this.dataArray.length;
         
         let sum = 0;
@@ -253,7 +259,7 @@ class CymaticsVisualizer {
         return {
             frequency: frequency,
             amplitude: amplitude,
-            spectrum: Array.from(this.dataArray)
+            spectrum: []
         };
     }
     
