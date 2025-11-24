@@ -140,38 +140,56 @@ class CymaticsVisualizer {
             return;
         }
         
-        // Remove existing iframe
-        if (this.youtubeIframe) {
-            this.youtubeIframe.remove();
-            this.youtubeIframe = null;
-        }
-        
-        // Create YouTube iframe embed - hidden, audio only
-        this.youtubeIframe = document.createElement('iframe');
-        this.youtubeIframe.id = 'youtubePlayer';
-        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&modestbranding=1`;
-        this.youtubeIframe.allow = 'autoplay; encrypted-media';
-        this.youtubeIframe.frameBorder = '0';
-        this.youtubeIframe.style.cssText = `
-            position: fixed;
-            top: -9999px;
-            left: -9999px;
-            width: 1px;
-            height: 1px;
-            opacity: 0;
-            pointer-events: none;
-            z-index: -1;
-        `;
-        
-        document.body.appendChild(this.youtubeIframe);
-        
         // Hide URL input
         if (this.urlInputContainer) {
             this.urlInputContainer.style.display = 'none';
         }
         
-        // Start visualization IMMEDIATELY - must be called from user gesture
-        // Don't use setTimeout as it breaks the user gesture requirement
+        // Update button text
+        if (this.visualizeBtn) {
+            this.visualizeBtn.textContent = 'LOADING...';
+            this.visualizeBtn.disabled = true;
+        }
+        
+        // Load YouTube audio - will use screen capture as it's the only browser-compatible way
+        try {
+            await this.loadYouTubeAudio(videoId);
+        } catch (error) {
+            console.error('Error loading audio:', error);
+            
+            if (this.visualizeBtn) {
+                this.visualizeBtn.textContent = 'VISUALIZE';
+                this.visualizeBtn.disabled = false;
+            }
+            
+            alert('Unable to load audio. Please make sure to select "Share audio" when prompted.');
+        }
+    }
+    
+    async loadYouTubeAudio(videoId) {
+    async loadYouTubeAudio(videoId) {
+        // Embed YouTube video (hidden) - it will play audio
+        if (this.youtubeIframe) {
+            this.youtubeIframe.remove();
+        }
+        
+        this.youtubeIframe = document.createElement('iframe');
+        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&mute=0`;
+        this.youtubeIframe.allow = 'autoplay; encrypted-media';
+        this.youtubeIframe.style.cssText = `
+            position: fixed;
+            top: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+        `;
+        document.body.appendChild(this.youtubeIframe);
+        
+        // Wait for video to start playing, then capture system audio
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Capture system audio - browser will prompt once
         await this.start();
     }
     
