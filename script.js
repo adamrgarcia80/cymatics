@@ -101,101 +101,55 @@ class CymaticsVisualizer {
     }
     
     async start() {
+        // Stop everything first to ensure clean state
+        if (this.isRunning) {
+            this.stop();
+            // Wait a moment for cleanup
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        
         try {
-            // Clean up any existing connections first
-            if (this.microphone) {
-                try {
-                    this.microphone.disconnect();
-                } catch (e) {
-                    // Ignore disconnect errors
-                }
-                this.microphone = null;
+            // Check support
+            if (!navigator.mediaDevices?.getUserMedia) {
+                throw new Error('getUserMedia not supported');
             }
             
-            if (this.stream) {
-                try {
-                    this.stream.getTracks().forEach(track => track.stop());
-                } catch (e) {
-                    // Ignore stop errors
-                }
-                this.stream = null;
+            // Request microphone - simplified constraints
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            
+            if (!stream?.getAudioTracks()?.length) {
+                throw new Error('No audio tracks');
             }
             
-            // Check if getUserMedia is available
-            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-                throw new Error('getUserMedia is not supported in this browser. Please use a modern browser.');
-            }
-            
-            // Request microphone access
-            const stream = await navigator.mediaDevices.getUserMedia({ 
-                audio: {
-                    echoCancellation: false,
-                    noiseSuppression: false,
-                    autoGainControl: false
-                } 
-            });
-            
-            // Check if stream was actually obtained
-            if (!stream || stream.getAudioTracks().length === 0) {
-                throw new Error('No audio tracks available in the stream');
-            }
-            
-            // Create audio context (must be created after user interaction)
-            if (!this.audioContext || this.audioContext.state === 'closed') {
-                this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            }
-            
-            // Resume audio context if suspended (required after user interaction on some browsers)
-            if (this.audioContext.state === 'suspended') {
-                try {
-                    await this.audioContext.resume();
-                    console.log('Audio context resumed');
-                } catch (resumeError) {
-                    console.warn('Could not resume audio context:', resumeError);
-                    throw new Error('Could not resume audio context. Please try again.');
-                }
-            }
-            
-            // Store stream reference for cleanup
+            // Store stream
             this.stream = stream;
             
-            // Create fresh analyser
-            try {
-                this.analyser = this.audioContext.createAnalyser();
-            } catch (e) {
-                throw new Error(`Failed to create analyser: ${e.message}`);
+            // Create new AudioContext if needed
+            if (!this.audioContext || this.audioContext.state === 'closed') {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                this.audioContext = new AC();
             }
             
-            // Set analyser properties BEFORE connecting (some properties might be readonly after connection)
-            try {
-                this.analyser.fftSize = 2048;
-                this.analyser.smoothingTimeConstant = 0.6;
-            } catch (e) {
-                throw new Error(`Failed to set analyser properties: ${e.message}`);
+            // Resume if suspended
+            if (this.audioContext.state === 'suspended') {
+                await this.audioContext.resume();
             }
             
-            // Create microphone source from stream
-            try {
-                this.microphone = this.audioContext.createMediaStreamSource(stream);
-            } catch (e) {
-                throw new Error(`Failed to create media stream source: ${e.message}`);
-            }
+            // Create fresh analyser node
+            this.analyser = this.audioContext.createAnalyser();
+            this.analyser.fftSize = 2048;
+            this.analyser.smoothingTimeConstant = 0.6;
             
-            // Connect after setting properties
-            try {
-                this.microphone.connect(this.analyser);
-            } catch (e) {
-                throw new Error(`Failed to connect microphone: ${e.message}`);
-            }
+            // Create source node
+            this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Get buffer length after connection
-            try {
-                const bufferLength = this.analyser.frequencyBinCount;
-                this.dataArray = new Uint8Array(bufferLength);
-            } catch (e) {
-                throw new Error(`Failed to create data array: ${e.message}`);
-            }
+            // Connect source to analyser
+            this.microphone.connect(this.analyser);
             
+            // Setup data array
+            this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+            
+            // Start
             this.isRunning = true;
             this.isStarted = true;
             this.toggleBtn.style.opacity = '0.5';
@@ -203,28 +157,26 @@ class CymaticsVisualizer {
             this.animate();
             
         } catch (error) {
-            console.error('Error accessing microphone:', error);
-            console.error('Error name:', error.name);
-            console.error('Error message:', error.message);
-            console.error('Full error:', error);
+            console.error('Start error:', error);
             
-            let errorMessage = 'Unable to access microphone. ';
-            
-            if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
-                errorMessage += 'Please allow microphone permissions in your browser settings.';
-            } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
-                errorMessage += 'No microphone found. Please connect a microphone.';
-            } else if (error.name === 'NotSupportedError' || error.name === 'ConstraintNotSatisfiedError') {
-                errorMessage += 'Microphone constraints not supported.';
-            } else if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') {
-                errorMessage += 'This site must be served over HTTPS (or localhost) to access the microphone.';
-            } else {
-                errorMessage += `Error: ${error.message || 'Unknown error'}`;
+            // Cleanup on error
+            if (this.stream) {
+                this.stream.getTracks().forEach(t => t.stop());
+                this.stream = null;
             }
             
-            alert(errorMessage);
+            // Show user-friendly error
+            let msg = 'Unable to access microphone: ';
+            if (error.name === 'NotAllowedError') {
+                msg += 'Permission denied. Please allow microphone access.';
+            } else if (error.name === 'NotFoundError') {
+                msg += 'No microphone found.';
+            } else {
+                msg += error.message || error.toString();
+            }
             
-            // Reset button state on error
+            alert(msg);
+            
             this.isStarted = false;
             this.isRunning = false;
             this.toggleBtn.style.opacity = '1';
