@@ -147,25 +147,49 @@ class CymaticsVisualizer {
             // Wait a tiny bit for Safari to initialize
             await new Promise(resolve => setTimeout(resolve, 50));
             
-            // Safari fix: Create analyser and set properties BEFORE creating source
+            // Safari fix: Create analyser with all properties in one atomic operation
+            // Create analyser
             this.analyser = this.audioContext.createAnalyser();
             
-            // Set properties immediately after creation, before any connections
-            // Safari makes these readonly after connection
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.6;
+            // Set properties IMMEDIATELY - Safari locks these if we delay
+            // Must be done before creating ANY source nodes or connections
+            try {
+                Object.defineProperty(this.analyser, 'fftSize', {
+                    value: 2048,
+                    writable: true,
+                    enumerable: true,
+                    configurable: true
+                });
+            } catch (e1) {
+                // Fallback to direct assignment
+                this.analyser.fftSize = 2048;
+            }
             
-            // Create data array BEFORE connection (Safari quirk)
+            try {
+                Object.defineProperty(this.analyser, 'smoothingTimeConstant', {
+                    value: 0.6,
+                    writable: true,
+                    enumerable: true,
+                    configurable: true
+                });
+            } catch (e2) {
+                // Fallback to direct assignment
+                this.analyser.smoothingTimeConstant = 0.6;
+            }
+            
+            // Verify properties were set
+            if (this.analyser.fftSize !== 2048) {
+                throw new Error('Could not set analyser fftSize (Safari readonly issue)');
+            }
+            
+            // Create data array
             this.dataArray = new Uint8Array(this.analyser.frequencyBinCount);
             
-            // NOW create the source node
+            // NOW create source node (after analyser is fully configured)
             this.microphone = this.audioContext.createMediaStreamSource(stream);
             
-            // Connect AFTER all properties are set
+            // Connect after everything is set
             this.microphone.connect(this.analyser);
-            
-            // Wait a moment for connection to establish (Safari needs this)
-            await new Promise(resolve => setTimeout(resolve, 50));
             
             // Start visualization
             this.isRunning = true;
