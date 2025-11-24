@@ -99,6 +99,34 @@ body {
     text-transform: uppercase;
 }
 
+.play-pause-btn {
+    font-family: 'Space Mono', 'Courier New', Courier, monospace;
+    width: 3rem;
+    height: 3rem;
+    background: rgba(0, 0, 0, 0.9);
+    color: #fff;
+    border: 2px solid #fff;
+    border-radius: 0.25rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: opacity 0.2s;
+    padding: 0;
+}
+
+.play-pause-btn:hover {
+    opacity: 0.8;
+}
+
+.play-pause-btn:active {
+    opacity: 0.6;
+}
+
+.play-pause-btn svg {
+    stroke: #fff;
+}
+
 .visualize-btn {
     font-family: 'Space Mono', 'Courier New', Courier, monospace;
     font-size: 0.75rem;
@@ -132,6 +160,15 @@ body {
     .url-input {
         width: 100%;
         min-width: auto;
+    }
+    
+    .play-pause-btn {
+        width: 100%;
+        height: 2.5rem;
+    }
+    
+    .visualize-btn {
+        width: 100%;
     }
     
     .load-btn {

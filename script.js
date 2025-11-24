@@ -21,7 +21,8 @@ class CymaticsVisualizer {
         this.maxParticles = 12000; // More particles for detail
         this.soundThreshold = 0.02; // Lower threshold
         this.lastAmplitude = 0; // Track amplitude for dissolve effect
-        this.dissolveAlpha = 0; // Current dissolve state
+        this.dissolveAlpha = 1; // Current dissolve state - start visible
+        this.isPaused = false; // Track pause state
         
         // Audio source
         this.audioSource = null;
@@ -33,6 +34,9 @@ class CymaticsVisualizer {
         this.urlInputContainer = document.getElementById('urlInputContainer');
         this.youtubeUrlInput = document.getElementById('youtubeUrlInput');
         this.visualizeBtn = document.getElementById('visualizeBtn');
+        this.playPauseBtn = document.getElementById('playPauseBtn');
+        this.playIcon = document.getElementById('playIcon');
+        this.pauseIcon = document.getElementById('pauseIcon');
         
         this.init();
     }
@@ -42,6 +46,8 @@ class CymaticsVisualizer {
         this.setupEventListeners();
         this.initializeParticles();
         this.drawInitialPattern();
+        // Start animation loop immediately so particles are always visible
+        this.animate();
     }
     
     setupCanvas() {
@@ -97,6 +103,13 @@ class CymaticsVisualizer {
             });
         }
         
+        // Play/Pause button
+        if (this.playPauseBtn) {
+            this.playPauseBtn.addEventListener('click', () => {
+                this.togglePlayPause();
+            });
+        }
+        
         // Enter key in input
         if (this.youtubeUrlInput) {
             this.youtubeUrlInput.addEventListener('keypress', (e) => {
@@ -108,6 +121,36 @@ class CymaticsVisualizer {
                     }
                 }
             });
+        }
+    }
+    
+    togglePlayPause() {
+        if (!this.isStarted) return;
+        
+        this.isPaused = !this.isPaused;
+        
+        // Update icon
+        if (this.playIcon && this.pauseIcon) {
+            if (this.isPaused) {
+                this.playIcon.style.display = 'block';
+                this.pauseIcon.style.display = 'none';
+            } else {
+                this.playIcon.style.display = 'none';
+                this.pauseIcon.style.display = 'block';
+            }
+        }
+        
+        // Pause/resume YouTube video
+        if (this.youtubeIframe && this.youtubeIframe.contentWindow) {
+            try {
+                if (this.isPaused) {
+                    this.youtubeIframe.contentWindow.postMessage('{"event":"command","func":"pauseVideo","args":""}', '*');
+                } else {
+                    this.youtubeIframe.contentWindow.postMessage('{"event":"command","func":"playVideo","args":""}', '*');
+                }
+            } catch (e) {
+                console.warn('Could not control YouTube player:', e);
+            }
         }
     }
     
@@ -140,15 +183,16 @@ class CymaticsVisualizer {
             return;
         }
         
-        // Hide URL input
-        if (this.urlInputContainer) {
-            this.urlInputContainer.style.display = 'none';
-        }
-        
+        // Keep URL input visible, just show loading state
         // Update button text
         if (this.visualizeBtn) {
             this.visualizeBtn.textContent = 'LOADING...';
             this.visualizeBtn.disabled = true;
+        }
+        
+        // Hide play/pause button during loading
+        if (this.playPauseBtn) {
+            this.playPauseBtn.style.display = 'none';
         }
         
         // Load YouTube audio - will use screen capture as it's the only browser-compatible way
@@ -173,7 +217,7 @@ class CymaticsVisualizer {
         }
         
         this.youtubeIframe = document.createElement('iframe');
-        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&mute=0`;
+        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&mute=0&origin=${window.location.origin}`;
         this.youtubeIframe.allow = 'autoplay; encrypted-media';
         this.youtubeIframe.style.cssText = `
             position: fixed;
@@ -269,10 +313,22 @@ class CymaticsVisualizer {
             // Start visualization
             this.isRunning = true;
             this.isStarted = true;
+            this.isPaused = false;
             
             // Update button text
             if (this.visualizeBtn) {
                 this.visualizeBtn.textContent = 'STOP';
+            }
+            
+            // Show play/pause button
+            if (this.playPauseBtn) {
+                this.playPauseBtn.style.display = 'flex';
+                if (this.pauseIcon) {
+                    this.pauseIcon.style.display = 'block';
+                }
+                if (this.playIcon) {
+                    this.playIcon.style.display = 'none';
+                }
             }
             
             this.animate();
@@ -316,25 +372,23 @@ class CymaticsVisualizer {
             this.audioSource = null;
         }
         
-        // Stop animation
-        if (this.animationId) {
-            cancelAnimationFrame(this.animationId);
-            this.animationId = null;
-        }
-        
+        // Don't cancel animation - let it continue for initial pattern
         this.isRunning = false;
         this.isStarted = false;
+        this.isPaused = false;
         
         // Reset button text
         if (this.visualizeBtn) {
             this.visualizeBtn.textContent = 'VISUALIZE';
+            this.visualizeBtn.disabled = false;
         }
         
-        // Show URL input again
-        if (this.urlInputContainer) {
-            this.urlInputContainer.style.display = 'flex';
+        // Hide play/pause button
+        if (this.playPauseBtn) {
+            this.playPauseBtn.style.display = 'none';
         }
         
+        // URL input stays visible - no need to show again
         this.drawInitialPattern();
     }
     
@@ -395,9 +449,9 @@ class CymaticsVisualizer {
     }
     
     drawInitialPattern() {
-        // Pure black background - no static
-        this.ctx.fillStyle = '#000';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        // Draw default cymatic pattern (not just black)
+        const defaultAudioData = { frequency: 440, amplitude: 0.3, spectrum: [] };
+        this.drawCymaticPattern(defaultAudioData);
     }
     
     // Calculate wave displacement at a point (for cymatic patterns)
@@ -462,9 +516,9 @@ class CymaticsVisualizer {
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Only draw particles if there's any visibility (from sound or dissolve)
-        if (this.dissolveAlpha <= 0 && !hasSound) {
-            return;
+        // For default pattern when not running, ensure dissolveAlpha is visible
+        if (!this.isRunning && !hasSound) {
+            this.dissolveAlpha = Math.max(this.dissolveAlpha, 0.5); // Keep default pattern visible
         }
         
         // Update particles based on wave pattern
@@ -475,12 +529,16 @@ class CymaticsVisualizer {
         // At louder volumes, fill whole screen (up to full screen)
         const maxRadius = baseMaxRadius * (0.4 + intensity * 0.6 * this.dissolveAlpha);
         
+        // Use default frequency if no sound detected
+        const effectiveFreq = hasSound ? frequency : 440; // Default to A4 note
+        const effectiveIntensity = hasSound ? intensity : 0.3; // Default intensity
+        
         // Update each particle's position based on wave field
         for (let i = 0; i < this.particles.length; i++) {
             const p = this.particles[i];
             
             // Get wave displacement at particle location
-            const displacement = this.getWaveDisplacement(p.x, p.y, frequency, intensity, this.time);
+            const displacement = this.getWaveDisplacement(p.x, p.y, effectiveFreq, effectiveIntensity, this.time);
             
             // Particles collect at nodes (low displacement areas)
             // In real cymatics, particles are pushed away from antinodes and settle at nodes
@@ -488,10 +546,10 @@ class CymaticsVisualizer {
             
             // Calculate gradient to find direction toward nodes (low displacement)
             const eps = 2;
-            const dispX1 = this.getWaveDisplacement(p.x + eps, p.y, frequency, intensity, this.time);
-            const dispX2 = this.getWaveDisplacement(p.x - eps, p.y, frequency, intensity, this.time);
-            const dispY1 = this.getWaveDisplacement(p.x, p.y + eps, frequency, intensity, this.time);
-            const dispY2 = this.getWaveDisplacement(p.x, p.y - eps, frequency, intensity, this.time);
+            const dispX1 = this.getWaveDisplacement(p.x + eps, p.y, effectiveFreq, effectiveIntensity, this.time);
+            const dispX2 = this.getWaveDisplacement(p.x - eps, p.y, effectiveFreq, effectiveIntensity, this.time);
+            const dispY1 = this.getWaveDisplacement(p.x, p.y + eps, effectiveFreq, effectiveIntensity, this.time);
+            const dispY2 = this.getWaveDisplacement(p.x, p.y - eps, effectiveFreq, effectiveIntensity, this.time);
             
             // Calculate gradient of displacement magnitude (particles move toward lower displacement)
             const gradX = (Math.abs(dispX1) - Math.abs(dispX2)) / (2 * eps);
@@ -530,16 +588,26 @@ class CymaticsVisualizer {
             }
             
             // Dynamic size variation based on node strength and intensity
-            p.size = p.baseSize * (0.7 + nodeStrength * 0.6 + intensity * 0.3);
+            p.size = p.baseSize * (0.7 + nodeStrength * 0.6 + effectiveIntensity * 0.3);
             
             // Update target opacity based on node strength
+            // Show pattern even without sound, using a default frequency
             if (hasSound) {
                 p.targetOpacity = nodeStrength > 0.15 ? 
                     Math.pow((nodeStrength - 0.15) / 0.85, 0.6) * intensity : 0;
+            } else {
+                // Default pattern when no sound - use a fixed frequency for visualization
+                const defaultFreq = 440; // A4 note
+                const defaultAmp = 0.3;
+                const defaultDisp = this.getWaveDisplacement(p.x, p.y, defaultFreq, defaultAmp, this.time);
+                const defaultNodeStrength = 1 - Math.abs(defaultDisp);
+                p.targetOpacity = defaultNodeStrength > 0.15 ? 
+                    Math.pow((defaultNodeStrength - 0.15) / 0.85, 0.6) * defaultAmp * 0.3 : 0;
             }
             
-            // Smooth opacity transition
-            p.opacity = p.opacity * 0.85 + p.targetOpacity * 0.15;
+            // Smooth opacity transition - faster when starting from 0
+            const transitionSpeed = p.opacity < 0.1 ? 0.25 : 0.15; // Faster when invisible
+            p.opacity = p.opacity * (1 - transitionSpeed) + p.targetOpacity * transitionSpeed;
             
             // Apply dissolve effect
             const finalOpacity = p.opacity * this.dissolveAlpha;
@@ -594,10 +662,17 @@ class CymaticsVisualizer {
     }
     
     animate() {
-        if (!this.isRunning) return;
-        
+        // Always run animation, even without audio (for initial/default pattern)
         const audioData = this.getAudioData();
-        this.drawCymaticPattern(audioData);
+        
+        // Always draw pattern - it will show default pattern if not running
+        // When paused, it will continue showing pattern but YouTube audio is paused
+        if (this.isRunning) {
+            this.drawCymaticPattern(audioData);
+        } else {
+            // Show initial/default pattern when not running
+            this.drawCymaticPattern({ frequency: 440, amplitude: 0.3, spectrum: [] });
+        }
         
         this.animationId = requestAnimationFrame(() => this.animate());
     }
