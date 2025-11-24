@@ -89,7 +89,23 @@ class CymaticsVisualizer {
     }
     
     setupEventListeners() {
-        // Button starts/stops audio capture
+        // Load button - loads YouTube video
+        if (this.loadBtn) {
+            this.loadBtn.addEventListener('click', () => {
+                this.loadYouTubeVideo();
+            });
+        }
+        
+        // Enter key in input
+        if (this.youtubeUrlInput) {
+            this.youtubeUrlInput.addEventListener('keypress', (e) => {
+                if (e.key === 'Enter') {
+                    this.loadYouTubeVideo();
+                }
+            });
+        }
+        
+        // Toggle button - starts/stops audio capture
         this.toggleBtn.addEventListener('click', () => {
             if (!this.isStarted) {
                 this.start();
