@@ -33,8 +33,6 @@ class CymaticsVisualizer {
         this.urlInputContainer = document.getElementById('urlInputContainer');
         this.youtubeUrlInput = document.getElementById('youtubeUrlInput');
         this.visualizeBtn = document.getElementById('visualizeBtn');
-        this.frequencyDisplay = document.getElementById('frequency');
-        this.amplitudeDisplay = document.getElementById('amplitude');
         
         this.init();
     }
@@ -148,21 +146,21 @@ class CymaticsVisualizer {
             this.youtubeIframe = null;
         }
         
-        // Create YouTube iframe embed
+        // Create YouTube iframe embed - hidden, audio only
         this.youtubeIframe = document.createElement('iframe');
         this.youtubeIframe.id = 'youtubePlayer';
-        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=1&modestbranding=1`;
+        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=0&modestbranding=1`;
         this.youtubeIframe.allow = 'autoplay; encrypted-media';
         this.youtubeIframe.frameBorder = '0';
         this.youtubeIframe.style.cssText = `
             position: fixed;
-            top: 4rem;
-            right: 1rem;
-            width: 320px;
-            height: 180px;
-            z-index: 1500;
-            border: 2px solid #fff;
-            background: #000;
+            top: -9999px;
+            left: -9999px;
+            width: 1px;
+            height: 1px;
+            opacity: 0;
+            pointer-events: none;
+            z-index: -1;
         `;
         
         document.body.appendChild(this.youtubeIframe);
@@ -319,9 +317,6 @@ class CymaticsVisualizer {
         if (this.urlInputContainer) {
             this.urlInputContainer.style.display = 'flex';
         }
-        
-        this.frequencyDisplay.textContent = '--';
-        this.amplitudeDisplay.textContent = '--';
         
         this.drawInitialPattern();
     }
