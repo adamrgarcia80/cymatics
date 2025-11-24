@@ -167,7 +167,6 @@ class CymaticsVisualizer {
     }
     
     async loadYouTubeAudio(videoId) {
-    async loadYouTubeAudio(videoId) {
         // Embed YouTube video (hidden) - it will play audio
         if (this.youtubeIframe) {
             this.youtubeIframe.remove();
