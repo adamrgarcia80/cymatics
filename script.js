@@ -102,6 +102,25 @@ class CymaticsVisualizer {
     
     async start() {
         try {
+            // Clean up any existing connections first
+            if (this.microphone) {
+                try {
+                    this.microphone.disconnect();
+                } catch (e) {
+                    // Ignore disconnect errors
+                }
+                this.microphone = null;
+            }
+            
+            if (this.stream) {
+                try {
+                    this.stream.getTracks().forEach(track => track.stop());
+                } catch (e) {
+                    // Ignore stop errors
+                }
+                this.stream = null;
+            }
+            
             // Check if getUserMedia is available
             if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
                 throw new Error('getUserMedia is not supported in this browser. Please use a modern browser.');
@@ -140,15 +159,42 @@ class CymaticsVisualizer {
             // Store stream reference for cleanup
             this.stream = stream;
             
-            this.analyser = this.audioContext.createAnalyser();
-            this.microphone = this.audioContext.createMediaStreamSource(stream);
+            // Create fresh analyser
+            try {
+                this.analyser = this.audioContext.createAnalyser();
+            } catch (e) {
+                throw new Error(`Failed to create analyser: ${e.message}`);
+            }
             
-            this.analyser.fftSize = 2048;
-            this.analyser.smoothingTimeConstant = 0.6;
-            const bufferLength = this.analyser.frequencyBinCount;
-            this.dataArray = new Uint8Array(bufferLength);
+            // Set analyser properties BEFORE connecting (some properties might be readonly after connection)
+            try {
+                this.analyser.fftSize = 2048;
+                this.analyser.smoothingTimeConstant = 0.6;
+            } catch (e) {
+                throw new Error(`Failed to set analyser properties: ${e.message}`);
+            }
             
-            this.microphone.connect(this.analyser);
+            // Create microphone source from stream
+            try {
+                this.microphone = this.audioContext.createMediaStreamSource(stream);
+            } catch (e) {
+                throw new Error(`Failed to create media stream source: ${e.message}`);
+            }
+            
+            // Connect after setting properties
+            try {
+                this.microphone.connect(this.analyser);
+            } catch (e) {
+                throw new Error(`Failed to connect microphone: ${e.message}`);
+            }
+            
+            // Get buffer length after connection
+            try {
+                const bufferLength = this.analyser.frequencyBinCount;
+                this.dataArray = new Uint8Array(bufferLength);
+            } catch (e) {
+                throw new Error(`Failed to create data array: ${e.message}`);
+            }
             
             this.isRunning = true;
             this.isStarted = true;
@@ -160,6 +206,7 @@ class CymaticsVisualizer {
             console.error('Error accessing microphone:', error);
             console.error('Error name:', error.name);
             console.error('Error message:', error.message);
+            console.error('Full error:', error);
             
             let errorMessage = 'Unable to access microphone. ';
             
