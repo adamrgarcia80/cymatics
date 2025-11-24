@@ -124,6 +124,66 @@ class CymaticsVisualizer {
         });
     }
     
+    extractVideoId(url) {
+        // Extract YouTube video ID from various URL formats
+        const patterns = [
+            /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+            /youtube\.com\/watch\?.*v=([^&\n?#]+)/
+        ];
+        
+        for (const pattern of patterns) {
+            const match = url.match(pattern);
+            if (match && match[1]) {
+                return match[1];
+            }
+        }
+        return null;
+    }
+    
+    loadYouTubeVideo() {
+        const url = this.youtubeUrlInput.value.trim();
+        if (!url) {
+            alert('Please enter a YouTube URL');
+            return;
+        }
+        
+        const videoId = this.extractVideoId(url);
+        if (!videoId) {
+            alert('Invalid YouTube URL. Please paste a valid YouTube link.');
+            return;
+        }
+        
+        // Remove existing iframe
+        if (this.youtubeIframe) {
+            this.youtubeIframe.remove();
+            this.youtubeIframe = null;
+        }
+        
+        // Create YouTube iframe embed
+        this.youtubeIframe = document.createElement('iframe');
+        this.youtubeIframe.id = 'youtubePlayer';
+        this.youtubeIframe.src = `https://www.youtube.com/embed/${videoId}?autoplay=1&enablejsapi=1&controls=1&modestbranding=1`;
+        this.youtubeIframe.allow = 'autoplay; encrypted-media';
+        this.youtubeIframe.frameBorder = '0';
+        this.youtubeIframe.style.cssText = `
+            position: fixed;
+            top: 4rem;
+            right: 1rem;
+            width: 320px;
+            height: 180px;
+            z-index: 1500;
+            border: 2px solid #fff;
+            background: #000;
+        `;
+        
+        document.body.appendChild(this.youtubeIframe);
+        
+        // Hide URL input after loading
+        if (this.urlInputContainer) {
+            this.urlInputContainer.style.display = 'none';
+        }
+    }
+    
     async start() {
         try {
             // Check if YouTube video is loaded
