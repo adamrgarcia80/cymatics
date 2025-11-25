@@ -19,7 +19,7 @@ class CymaticsVisualizer {
         // Particle system for sand
         this.particles = [];
         this.maxParticles = 12000; // More particles for detail
-        this.soundThreshold = 0.02; // Lower threshold
+        this.soundThreshold = 0.001; // Very low threshold - respond to even tiny audio signals
         this.lastAmplitude = 0; // Track amplitude for dissolve effect
         this.dissolveAlpha = 1; // Current dissolve state - start visible
         this.isPaused = false; // Track pause state
@@ -467,14 +467,16 @@ class CymaticsVisualizer {
             // Don't return - try to get data anyway
         }
         
-        // Check if audio element is actually playing
-        if (!this.audioElement || this.audioElement.paused || this.audioElement.ended) {
-            // Audio not playing, return minimal data
+        // Check if audio element exists and is configured
+        if (!this.audioElement) {
             return { frequency: 440, amplitude: 0, spectrum: [] };
         }
         
+        const audioIsPlaying = !this.audioElement.paused && !this.audioElement.ended;
+        
         try {
-            // Get frequency data
+            // Always try to get analyser data - don't skip just because audio thinks it's paused
+            // The analyser might still have buffered data
             this.analyser.getByteFrequencyData(this.dataArray);
             
             // Also get time domain data for better amplitude detection
@@ -483,7 +485,7 @@ class CymaticsVisualizer {
             
         } catch (e) {
             console.warn('Error getting audio data:', e);
-            return { frequency: 0, amplitude: 0, spectrum: [] };
+            return { frequency: 440, amplitude: 0, spectrum: [] };
         }
         
         // Safely iterate through data array
@@ -623,10 +625,21 @@ class CymaticsVisualizer {
     }
     
     drawCymaticPattern(audioData) {
-        const { frequency, amplitude, spectrum } = audioData;
+        let { frequency, amplitude, spectrum } = audioData;
         
         // Update time
         this.time += 0.02;
+        
+        // Debug: log audio data occasionally
+        if (Math.random() < 0.005) { // 0.5% of frames
+            console.log('Visualization audio data:', {
+                frequency: frequency.toFixed(2),
+                amplitude: amplitude.toFixed(4),
+                threshold: this.soundThreshold,
+                isRunning: this.isRunning,
+                audioPlaying: this.audioElement && !this.audioElement.paused
+            });
+        }
         
         // Handle dissolve effect - gradually fade when sound stops
         const hasSound = amplitude >= this.soundThreshold;
@@ -641,6 +654,9 @@ class CymaticsVisualizer {
             amplitude = this.lastAmplitude * this.dissolveAlpha; // Use fading amplitude
         }
         
+        // Ensure minimum amplitude for visualization even with low sound
+        amplitude = Math.max(amplitude, 0.05); // Minimum 5% for visibility
+        
         // Clear to pure black
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -653,14 +669,31 @@ class CymaticsVisualizer {
         // Update particles based on wave pattern
         // In cymatics, particles are pushed away from antinodes (high displacement) 
         // and settle at nodes (low displacement)
-        const intensity = Math.min(amplitude * 4, 1);
+        
+        // Check if audio is actually playing
+        const audioIsPlaying = this.audioElement && !this.audioElement.paused && !this.audioElement.ended;
+        
+        // Make intensity more sensitive - multiply by larger factor and add minimum
+        // If audio is playing, ensure we have minimum intensity even if amplitude is very low
+        let rawIntensity = amplitude * 10; // Increased multiplier for better responsiveness
+        if (audioIsPlaying && amplitude < 0.01) {
+            // Audio is playing but amplitude is very low - use minimum intensity
+            rawIntensity = 0.15; // 15% minimum intensity when audio is playing
+        }
+        const intensity = Math.min(Math.max(rawIntensity, audioIsPlaying ? 0.15 : 0.1), 1);
+        
         const baseMaxRadius = Math.min(this.canvas.width, this.canvas.height);
         // At louder volumes, fill whole screen (up to full screen)
         const maxRadius = baseMaxRadius * (0.4 + intensity * 0.6 * this.dissolveAlpha);
         
-        // Use default frequency if no sound detected
-        const effectiveFreq = hasSound ? frequency : 440; // Default to A4 note
-        const effectiveIntensity = hasSound ? intensity : 0.3; // Default intensity
+        // Always use actual frequency if audio is playing, otherwise use default
+        let effectiveFreq = 440; // Default
+        if (audioIsPlaying && frequency > 0) {
+            effectiveFreq = Math.max(frequency, 20); // Ensure valid frequency range
+        }
+        
+        // Always use intensity based on whether audio is playing
+        const effectiveIntensity = audioIsPlaying ? intensity : 0.3;
         
         // Update each particle's position based on wave field
         for (let i = 0; i < this.particles.length; i++) {
