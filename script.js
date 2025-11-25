@@ -31,10 +31,11 @@ class CymaticsVisualizer {
         // DOM elements
         this.urlInputContainer = document.getElementById('urlInputContainer');
         this.youtubeUrlInput = document.getElementById('youtubeUrlInput');
+        this.fileInput = document.getElementById('fileInput');
         this.visualizeBtn = document.getElementById('visualizeBtn');
         this.playPauseBtn = document.getElementById('playPauseBtn');
-        this.playIcon = document.getElementById('playIcon');
-        this.pauseIcon = document.getElementById('pauseIcon');
+        this.playText = document.getElementById('playText');
+        this.pauseText = document.getElementById('pauseText');
         
         this.init();
     }
@@ -119,6 +120,23 @@ class CymaticsVisualizer {
                     }
                 }
             });
+            
+            // Click input to open file picker
+            this.youtubeUrlInput.addEventListener('click', () => {
+                if (this.fileInput) {
+                    this.fileInput.click();
+                }
+            });
+        }
+        
+        // File input handler
+        if (this.fileInput) {
+            this.fileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    this.loadAudioFromFile(file);
+                }
+            });
         }
     }
     
@@ -129,14 +147,14 @@ class CymaticsVisualizer {
             // Resume playback
             this.audioElement.play();
             this.isPaused = false;
-            if (this.playIcon) this.playIcon.style.display = 'none';
-            if (this.pauseIcon) this.pauseIcon.style.display = 'block';
+            if (this.playText) this.playText.style.display = 'none';
+            if (this.pauseText) this.pauseText.style.display = 'block';
         } else {
             // Pause playback
             this.audioElement.pause();
             this.isPaused = true;
-            if (this.playIcon) this.playIcon.style.display = 'block';
-            if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+            if (this.playText) this.playText.style.display = 'block';
+            if (this.pauseText) this.pauseText.style.display = 'none';
         }
         
         // Resume audio context if suspended
@@ -148,7 +166,12 @@ class CymaticsVisualizer {
     async loadAndVisualize() {
         const url = this.youtubeUrlInput.value.trim();
         if (!url) {
-            alert('Please enter an audio URL (MP3, WAV, OGG, M4A, etc.)');
+            // If no URL, check if there's a file selected
+            if (this.fileInput && this.fileInput.files.length > 0) {
+                await this.loadAudioFromFile(this.fileInput.files[0]);
+                return;
+            }
+            alert('Please enter an audio URL or click the input to upload a file');
             return;
         }
         
@@ -156,7 +179,7 @@ class CymaticsVisualizer {
         try {
             new URL(url);
         } catch (e) {
-            alert('Please enter a valid URL');
+            alert('Please enter a valid URL or click the input to upload a file');
             return;
         }
         
@@ -185,6 +208,50 @@ class CymaticsVisualizer {
             }
             
             alert(`Unable to load audio: ${error.message || 'Please check the URL and try again'}`);
+        }
+    }
+    
+    async loadAudioFromFile(file) {
+        // Validate file type
+        if (!file.type.startsWith('audio/')) {
+            alert('Please select an audio file (MP3, WAV, OGG, M4A, etc.)');
+            return;
+        }
+        
+        // Update button text
+        if (this.visualizeBtn) {
+            this.visualizeBtn.textContent = 'LOADING...';
+            this.visualizeBtn.disabled = true;
+        }
+        
+        // Hide play/pause button during loading
+        if (this.playPauseBtn) {
+            this.playPauseBtn.style.display = 'none';
+        }
+        
+        try {
+            // Create object URL from file
+            const objectUrl = URL.createObjectURL(file);
+            
+            // Load audio from the object URL
+            await this.loadAudioFromUrl(objectUrl);
+            
+            // Update input field to show filename
+            if (this.youtubeUrlInput) {
+                this.youtubeUrlInput.value = file.name;
+            }
+        } catch (error) {
+            console.error('Error loading audio file:', error);
+            
+            // Clean up on error
+            this.stop();
+            
+            if (this.visualizeBtn) {
+                this.visualizeBtn.textContent = 'VISUALIZE';
+                this.visualizeBtn.disabled = false;
+            }
+            
+            alert(`Unable to load audio file: ${error.message || 'Please try a different file'}`);
         }
     }
     
@@ -257,20 +324,20 @@ class CymaticsVisualizer {
                 this.audioContext.resume();
             }
             this.isPaused = false;
-            if (this.playIcon) this.playIcon.style.display = 'none';
-            if (this.pauseIcon) this.pauseIcon.style.display = 'block';
+            if (this.playText) this.playText.style.display = 'none';
+            if (this.pauseText) this.pauseText.style.display = 'block';
         };
         
         this.audioElement.onpause = () => {
             this.isPaused = true;
-            if (this.playIcon) this.playIcon.style.display = 'block';
-            if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+            if (this.playText) this.playText.style.display = 'block';
+            if (this.pauseText) this.pauseText.style.display = 'none';
         };
         
         this.audioElement.onended = () => {
             this.isPaused = true;
-            if (this.playIcon) this.playIcon.style.display = 'block';
-            if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+            if (this.playText) this.playText.style.display = 'block';
+            if (this.pauseText) this.pauseText.style.display = 'none';
         };
         
         // Start playing
@@ -296,11 +363,11 @@ class CymaticsVisualizer {
         if (this.playPauseBtn) {
             this.playPauseBtn.style.display = 'flex';
             if (this.isPaused) {
-                if (this.playIcon) this.playIcon.style.display = 'block';
-                if (this.pauseIcon) this.pauseIcon.style.display = 'none';
+                if (this.playText) this.playText.style.display = 'block';
+                if (this.pauseText) this.pauseText.style.display = 'none';
             } else {
-                if (this.playIcon) this.playIcon.style.display = 'none';
-                if (this.pauseIcon) this.pauseIcon.style.display = 'block';
+                if (this.playText) this.playText.style.display = 'none';
+                if (this.pauseText) this.pauseText.style.display = 'block';
             }
         }
         
@@ -433,13 +500,29 @@ class CymaticsVisualizer {
         this.ctx.fillStyle = '#000';
         this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
         
-        // Draw small pulsing light in center
+        // Draw small pulsing light in center with blur effect
         const pulseSize = 8 + Math.sin(this.time * 2) * 4; // Pulse between 4-12 pixels
         const pulseAlpha = 0.5 + Math.sin(this.time * 3) * 0.3; // Pulse opacity
         
         this.ctx.save();
         this.ctx.globalAlpha = pulseAlpha;
-        this.ctx.fillStyle = '#fff';
+        
+        // Create blur effect using shadow
+        this.ctx.shadowBlur = 20; // Blur radius
+        this.ctx.shadowColor = '#fff'; // White glow
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
+        
+        // Also create a radial gradient for softer edges
+        const gradient = this.ctx.createRadialGradient(
+            this.centerX, this.centerY, 0,
+            this.centerX, this.centerY, pulseSize
+        );
+        gradient.addColorStop(0, 'rgba(255, 255, 255, 1)');
+        gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)');
+        gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+        
+        this.ctx.fillStyle = gradient;
         this.ctx.beginPath();
         this.ctx.arc(this.centerX, this.centerY, pulseSize, 0, Math.PI * 2);
         this.ctx.fill();

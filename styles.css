@@ -92,6 +92,11 @@ body {
     min-width: 200px;
     text-transform: uppercase;
     letter-spacing: 0.1em;
+    cursor: text;
+}
+
+.url-input::placeholder {
+    cursor: pointer;
 }
 
 .url-input::placeholder {
@@ -103,7 +108,7 @@ body {
     font-family: 'Space Mono', 'Courier New', Courier, monospace;
     width: auto;
     height: auto;
-    min-width: 3rem;
+    min-width: 5rem;
     min-height: 3rem;
     background: rgba(0, 0, 0, 0.9);
     color: #fff;
@@ -114,7 +119,7 @@ body {
     align-items: center;
     justify-content: center;
     transition: opacity 0.2s;
-    padding: 0.75rem;
+    padding: 0.75rem 1.5rem;
 }
 
 .play-pause-btn:hover {
@@ -125,8 +130,11 @@ body {
     opacity: 0.6;
 }
 
-.play-pause-btn svg {
-    stroke: #fff;
+.btn-text {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
 }
 
 .visualize-btn {
