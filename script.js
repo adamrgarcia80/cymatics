@@ -314,11 +314,21 @@ class CymaticsVisualizer {
         // Store gain node so we can access it later
         this.gainNode = gainNode;
         
+        // CRITICAL: When using createMediaElementSource, the audio element's default output is disconnected
+        // We MUST connect to destination, otherwise no audio will play
         // Connect properly: source -> gain -> analyser (for visualization)
-        //                   gain -> destination (for audio output)
+        //                   source -> gain -> destination (for audio output)
         this.audioSource.connect(gainNode);
-        gainNode.connect(this.analyser);
-        gainNode.connect(this.audioContext.destination); // Connect gain to speakers for audio output
+        gainNode.connect(this.analyser); // Analyser gets audio data for visualization
+        gainNode.connect(this.audioContext.destination); // Destination gets audio for speakers
+        
+        // Verify connection
+        console.log('Audio routing:', {
+            sourceConnected: this.audioSource.numberOfOutputs > 0,
+            gainConnected: gainNode.numberOfOutputs > 0,
+            analyserConnected: this.analyser.numberOfOutputs >= 0,
+            destinationConnected: !!this.audioContext.destination
+        });
         
         console.log('Audio connected:', {
             source: !!this.audioSource,
@@ -354,19 +364,28 @@ class CymaticsVisualizer {
             if (this.pauseText) this.pauseText.style.display = 'none';
         };
         
-        // Start playing
-        try {
-            await this.audioElement.play();
-            console.log('Audio started playing');
-        } catch (e) {
-            // If autoplay is blocked, user will need to click play/pause
-            console.log('Autoplay blocked, waiting for user interaction:', e);
-        }
-        
-        // Ensure audio context is running
+        // CRITICAL: Ensure audio context is running BEFORE trying to play
         if (this.audioContext.state === 'suspended') {
             await this.audioContext.resume();
-            console.log('Audio context resumed');
+            console.log('Audio context resumed before play');
+        }
+        
+        // Start playing - this must happen after audio context is resumed
+        try {
+            const playPromise = this.audioElement.play();
+            if (playPromise !== undefined) {
+                await playPromise;
+                console.log('Audio started playing successfully');
+            }
+        } catch (e) {
+            // If autoplay is blocked, user will need to click play/pause
+            console.warn('Autoplay blocked or play failed:', e);
+            console.log('User needs to click PLAY button to start audio');
+        }
+        
+        // Double-check audio context is running
+        if (this.audioContext.state === 'suspended') {
+            console.warn('Audio context still suspended after play attempt');
         }
         
         // Start visualization
@@ -529,20 +548,38 @@ class CymaticsVisualizer {
         const timeAmplitude = timeData.length > 0 ? timeSum / timeData.length / 128 : 0;
         
         // Use the higher of the two for better responsiveness
-        const amplitude = Math.max(freqAmplitude, timeAmplitude * 1.5);
+        let amplitude = Math.max(freqAmplitude, timeAmplitude * 1.5);
         
-        // Debug logging (only occasionally to avoid spam)
-        if (Math.random() < 0.01) { // 1% of the time
+        // CRITICAL: If audio is playing but amplitude is still very low, boost it significantly
+        // This ensures visualization always responds when audio is actually playing
+        if (audioIsPlaying && amplitude < 0.05 && maxValue > 0) {
+            // Audio is playing, we have some data, but amplitude is very low
+            // This can happen - boost it so visualization responds
+            amplitude = Math.max(amplitude * 10, 0.1); // At least 10% amplitude when audio is playing
+            console.log('Amplitude boosted for visualization:', {
+                original: freqAmplitude.toFixed(4),
+                boosted: amplitude.toFixed(4),
+                maxValue: maxValue
+            });
+        }
+        
+        // Debug logging (more frequently for troubleshooting)
+        if (Math.random() < 0.05) { // 5% of the time for debugging
             console.log('Audio data:', {
                 frequency: frequency.toFixed(2),
                 amplitude: amplitude.toFixed(4),
+                freqAmplitude: freqAmplitude.toFixed(4),
+                timeAmplitude: timeAmplitude.toFixed(4),
                 maxValue: maxValue,
-                hasData: maxValue > 0
+                hasData: maxValue > 0,
+                audioIsPlaying: audioIsPlaying,
+                audioPaused: this.audioElement.paused,
+                audioEnded: this.audioElement.ended
             });
         }
         
         return {
-            frequency: frequency,
+            frequency: frequency || 440, // Default to 440Hz if 0
             amplitude: amplitude,
             spectrum: Array.from(this.dataArray)
         };
@@ -641,13 +678,22 @@ class CymaticsVisualizer {
             });
         }
         
+        // Check if audio is actually playing (more important than just amplitude threshold)
+        const audioIsPlaying = this.audioElement && !this.audioElement.paused && !this.audioElement.ended;
+        
         // Handle dissolve effect - gradually fade when sound stops
-        const hasSound = amplitude >= this.soundThreshold;
+        // CRITICAL FIX: Use audio playing state OR amplitude threshold
+        const hasSound = audioIsPlaying || amplitude >= this.soundThreshold;
         
         if (hasSound) {
             // Sound is active - fade in quickly
-            this.dissolveAlpha = Math.min(this.dissolveAlpha + 0.08, 1);
+            this.dissolveAlpha = Math.min(this.dissolveAlpha + 0.1, 1); // Faster fade in
             this.lastAmplitude = amplitude;
+            
+            // If audio is playing but amplitude is still low, boost it
+            if (audioIsPlaying && amplitude < 0.1) {
+                amplitude = Math.max(amplitude, 0.15); // Minimum 15% when audio is playing
+            }
         } else {
             // No sound - slowly dissolve (lower fall off)
             this.dissolveAlpha = Math.max(this.dissolveAlpha - 0.004, 0); // Very slow dissolve
@@ -655,7 +701,11 @@ class CymaticsVisualizer {
         }
         
         // Ensure minimum amplitude for visualization even with low sound
-        amplitude = Math.max(amplitude, 0.05); // Minimum 5% for visibility
+        if (audioIsPlaying) {
+            amplitude = Math.max(amplitude, 0.15); // Higher minimum when audio is playing
+        } else {
+            amplitude = Math.max(amplitude, 0.05); // Lower minimum when not playing
+        }
         
         // Clear to pure black
         this.ctx.fillStyle = '#000';
