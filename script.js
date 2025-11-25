@@ -298,6 +298,8 @@ class CymaticsVisualizer {
         }
         
         // Connect audio element to Web Audio API
+        // IMPORTANT: createMediaElementSource can only be called once per audio element
+        // Since we create a new audio element each time, this should be fine
         this.audioSource = this.audioContext.createMediaElementSource(this.audioElement);
         
         // Create analyser
@@ -309,10 +311,22 @@ class CymaticsVisualizer {
         const gainNode = this.audioContext.createGain();
         gainNode.gain.value = 1.5;
         
-        // Connect: audio element -> gain -> analyser -> destination
+        // Store gain node so we can access it later
+        this.gainNode = gainNode;
+        
+        // Connect properly: source -> gain -> analyser (for visualization)
+        //                   gain -> destination (for audio output)
         this.audioSource.connect(gainNode);
         gainNode.connect(this.analyser);
-        this.audioSource.connect(this.audioContext.destination); // Also connect to speakers
+        gainNode.connect(this.audioContext.destination); // Connect gain to speakers for audio output
+        
+        console.log('Audio connected:', {
+            source: !!this.audioSource,
+            analyser: !!this.analyser,
+            gainNode: !!gainNode,
+            destination: !!this.audioContext.destination,
+            audioContextState: this.audioContext.state
+        });
         
         // Create data array
         const bufferLength = this.analyser.frequencyBinCount;
@@ -343,15 +357,31 @@ class CymaticsVisualizer {
         // Start playing
         try {
             await this.audioElement.play();
+            console.log('Audio started playing');
         } catch (e) {
             // If autoplay is blocked, user will need to click play/pause
-            console.log('Autoplay blocked, waiting for user interaction');
+            console.log('Autoplay blocked, waiting for user interaction:', e);
+        }
+        
+        // Ensure audio context is running
+        if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
+            console.log('Audio context resumed');
         }
         
         // Start visualization
         this.isRunning = true;
         this.isStarted = true;
         this.isPaused = this.audioElement.paused;
+        
+        // Log initial state
+        console.log('Visualization started:', {
+            isRunning: this.isRunning,
+            isPaused: this.isPaused,
+            audioPlaying: !this.audioElement.paused,
+            audioContextState: this.audioContext.state,
+            hasAnalyser: !!this.analyser
+        });
         
         // Update button text
         if (this.visualizeBtn) {
@@ -425,8 +455,22 @@ class CymaticsVisualizer {
         }
         
         // Check if audio context is still running
-        if (this.audioContext.state === 'closed' || this.audioContext.state === 'suspended') {
+        if (this.audioContext.state === 'closed') {
             return { frequency: 0, amplitude: 0, spectrum: [] };
+        }
+        
+        // Try to resume if suspended (autoplay policy)
+        if (this.audioContext.state === 'suspended') {
+            this.audioContext.resume().catch(e => {
+                console.warn('Could not resume audio context:', e);
+            });
+            // Don't return - try to get data anyway
+        }
+        
+        // Check if audio element is actually playing
+        if (!this.audioElement || this.audioElement.paused || this.audioElement.ended) {
+            // Audio not playing, return minimal data
+            return { frequency: 440, amplitude: 0, spectrum: [] };
         }
         
         try {
@@ -484,6 +528,16 @@ class CymaticsVisualizer {
         
         // Use the higher of the two for better responsiveness
         const amplitude = Math.max(freqAmplitude, timeAmplitude * 1.5);
+        
+        // Debug logging (only occasionally to avoid spam)
+        if (Math.random() < 0.01) { // 1% of the time
+            console.log('Audio data:', {
+                frequency: frequency.toFixed(2),
+                amplitude: amplitude.toFixed(4),
+                maxValue: maxValue,
+                hasData: maxValue > 0
+            });
+        }
         
         return {
             frequency: frequency,
