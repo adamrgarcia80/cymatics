@@ -10,16 +10,15 @@
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <canvas id="cymaticCanvas"></canvas>
+    <canvas id="canvas"></canvas>
     
-    <div class="url-input-container" id="urlInputContainer">
-        <input type="file" id="fileInput" accept="audio/*" class="file-input" style="display: none;">
-        <input type="text" id="youtubeUrlInput" placeholder="Click to upload audio file or paste URL" class="url-input">
+    <div class="controls">
+        <label for="fileInput" class="file-label">UPLOAD FILE</label>
+        <input type="file" id="fileInput" accept="audio/*" class="file-input">
         <button id="playPauseBtn" class="play-pause-btn" style="display: none;">
-            <span id="playText" class="btn-text">PLAY</span>
-            <span id="pauseText" class="btn-text" style="display: none;">PAUSE</span>
+            <span id="playText">PLAY</span>
+            <span id="pauseText" style="display: none;">PAUSE</span>
         </button>
-        <button id="visualizeBtn" class="visualize-btn">VISUALIZE</button>
     </div>
     
     <script src="script.js"></script>
