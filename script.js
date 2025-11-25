@@ -121,10 +121,26 @@ class CymaticsVisualizer {
                 }
             });
             
-            // Click input to open file picker
-            this.youtubeUrlInput.addEventListener('click', () => {
+            // Click input to open file picker - use mousedown to fire before focus
+            this.youtubeUrlInput.addEventListener('mousedown', (e) => {
+                e.preventDefault(); // Prevent text field focus
+                // Open file picker
                 if (this.fileInput) {
-                    this.fileInput.click();
+                    setTimeout(() => {
+                        this.fileInput.click();
+                    }, 0);
+                }
+            });
+            
+            // Also handle focus event as backup
+            this.youtubeUrlInput.addEventListener('focus', (e) => {
+                // If field is empty or contains a filename, open file picker
+                const value = this.youtubeUrlInput.value.trim();
+                if (!value || (!value.startsWith('http') && !value.startsWith('https'))) {
+                    e.preventDefault();
+                    if (this.fileInput) {
+                        this.fileInput.click();
+                    }
                 }
             });
         }
@@ -134,6 +150,11 @@ class CymaticsVisualizer {
             this.fileInput.addEventListener('change', (e) => {
                 const file = e.target.files[0];
                 if (file) {
+                    // Update input field to show filename
+                    if (this.youtubeUrlInput) {
+                        this.youtubeUrlInput.value = file.name;
+                    }
+                    // Auto-load the file when selected
                     this.loadAudioFromFile(file);
                 }
             });
@@ -164,22 +185,34 @@ class CymaticsVisualizer {
     }
     
     async loadAndVisualize() {
+        // First check if there's a file selected (takes priority)
+        if (this.fileInput && this.fileInput.files.length > 0) {
+            await this.loadAudioFromFile(this.fileInput.files[0]);
+            return;
+        }
+        
         const url = this.youtubeUrlInput.value.trim();
         if (!url) {
-            // If no URL, check if there's a file selected
+            // No file and no URL - prompt user
+            alert('Please click the input field to upload an audio file, or enter an audio URL');
+            // Open file picker automatically
+            if (this.fileInput) {
+                this.fileInput.click();
+            }
+            return;
+        }
+        
+        // Validate URL - check if it's a filename or actual URL
+        try {
+            new URL(url);
+        } catch (e) {
+            // Not a valid URL - might be a filename from file upload
+            // Try to use the file input if available
             if (this.fileInput && this.fileInput.files.length > 0) {
                 await this.loadAudioFromFile(this.fileInput.files[0]);
                 return;
             }
-            alert('Please enter an audio URL or click the input to upload a file');
-            return;
-        }
-        
-        // Validate URL
-        try {
-            new URL(url);
-        } catch (e) {
-            alert('Please enter a valid URL or click the input to upload a file');
+            alert('Please enter a valid audio URL or click the input to upload a file');
             return;
         }
         
@@ -233,13 +266,13 @@ class CymaticsVisualizer {
             // Create object URL from file
             const objectUrl = URL.createObjectURL(file);
             
-            // Load audio from the object URL
-            await this.loadAudioFromUrl(objectUrl);
-            
-            // Update input field to show filename
+            // Update input field to show filename BEFORE loading
             if (this.youtubeUrlInput) {
                 this.youtubeUrlInput.value = file.name;
             }
+            
+            // Load audio from the object URL
+            await this.loadAudioFromUrl(objectUrl);
         } catch (error) {
             console.error('Error loading audio file:', error);
             
